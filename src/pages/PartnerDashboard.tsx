@@ -71,9 +71,6 @@ export default function PartnerDashboard() {
 
   useEffect(() => { if (!authLoading && user) load(); }, [authLoading, user, range.from, range.to]);
 
-  if (!authLoading && !user) return <Navigate to={`/${slug}/login`} replace />;
-  if (forbidden) return <Navigate to={`/${slug}/login`} replace />;
-
   const createClient = async () => {
     if (!name.trim() || !email.trim() || password.length < 8) {
       toast.error("Nome, e-mail e senha (min. 8) são obrigatórios");
@@ -122,6 +119,9 @@ export default function PartnerDashboard() {
   const periodLabel = range.from && range.to
     ? `${format(range.from, "dd/MM", { locale: ptBR })} – ${format(range.to, "dd/MM/yyyy", { locale: ptBR })}`
     : "Todo o período";
+
+  if (!authLoading && !user) return <Navigate to={`/${slug}/login`} replace />;
+  if (forbidden) return <Navigate to={`/${slug}/login`} replace />;
 
   return (
     <div className="min-h-screen flex bg-background text-foreground">
