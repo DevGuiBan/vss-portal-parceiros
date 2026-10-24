@@ -96,7 +96,6 @@ interface PortalContextValue {
   uploadFile: (file: File, prefix: string, onProgress?: (pct: number) => void) => Promise<UploadResult>;
   requestChange: (submissionId: string, message: string) => Promise<void>;
   deleteSubmission: (id: string) => Promise<void>;
-  loadLiveDispatch: (submissionId: string) => Promise<PortalLiveDispatch>;
   listPresets: () => Promise<DemandPreset[]>;
   savePreset: (data: { id?: string; name: string; description?: string; payload: any }) => Promise<DemandPreset>;
   deletePreset: (id: string) => Promise<void>;
@@ -108,17 +107,6 @@ export interface DemandPreset {
   description: string;
   payload: any;
   updated_at: string;
-}
-
-export interface PortalLiveDispatch {
-  available: boolean;
-  templates: number;
-  running?: boolean;
-  demandStatus?: string | null;
-  updatedAt?: string | null;
-  finishedAt?: string | null;
-  totals: { sent: number; delivered: number; seen: number; failed: number; total: number };
-  tests?: { sent: number; delivered: number; seen: number; failed: number };
 }
 
 export interface UploadResult {
@@ -363,10 +351,6 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     await loadOverview();
   };
 
-  const loadLiveDispatch = useCallback(async (submissionId: string): Promise<PortalLiveDispatch> => {
-    return (await callApi("live-dispatch", { submissionId })) as PortalLiveDispatch;
-  }, [callApi]);
-
   const listPresets = useCallback(async (): Promise<DemandPreset[]> => {
     const res = await callApi("list-presets");
     return Array.isArray(res) ? (res as DemandPreset[]) : [];
@@ -383,9 +367,9 @@ export function PortalProvider({ children }: { children: ReactNode }) {
   const value = useMemo<PortalContextValue>(() => ({
     token, profile, responsible, submissions, overview, loading, error, switching,
     updateProfile, submitDispatch, updateSubmission, loadOverview, uploadFile,
-    requestChange, deleteSubmission, loadLiveDispatch,
+    requestChange, deleteSubmission,
     listPresets, savePreset, deletePreset,
-  }), [token, profile, responsible, submissions, overview, loading, error, switching, loadOverview, uploadFile, loadLiveDispatch, listPresets, savePreset, deletePreset]);
+  }), [token, profile, responsible, submissions, overview, loading, error, switching, loadOverview, uploadFile, listPresets, savePreset, deletePreset]);
 
   return <PortalContext.Provider value={value}>{children}</PortalContext.Provider>;
 }

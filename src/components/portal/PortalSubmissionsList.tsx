@@ -51,12 +51,12 @@ import {
   AlertOctagon,
   AlertTriangle,
   CheckCircle2,
-  Activity,
+  ClipboardList,
   MessageSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { normalizeSearch } from "@/lib/normalizeSearch";
-import { PortalLiveDispatchDialog } from "@/components/portal/PortalLiveDispatchDialog";
+import { PortalReportDialog } from "@/components/portal/PortalReportDialog";
 
 const DEMAND_STATUS_META: Record<string, { label: string; cls: string }> = {
   pendente: { label: "A Fazer", cls: "bg-warning/15 text-warning border-warning/30" },
@@ -85,7 +85,7 @@ export function PortalSubmissionsList({ token }: { token: string | null }) {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [liveTarget, setLiveTarget] = useState<{ id: string; title: string } | null>(null);
+  const [reportTarget, setReportTarget] = useState<{ dispatchId: string | null; title: string } | null>(null);
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
@@ -409,9 +409,9 @@ export function PortalSubmissionsList({ token }: { token: string | null }) {
                                 size="sm"
                                 variant="outline"
                                 className="flex-1"
-                                onClick={() => setLiveTarget({ id: s.id, title })}
+                                onClick={() => setReportTarget({ dispatchId: s.dispatch_id ?? null, title })}
                               >
-                                <Activity className="h-3.5 w-3.5 mr-1" /> Acompanhar disparo
+                                <ClipboardList className="h-3.5 w-3.5 mr-1" /> Ver relatório
                               </Button>
                               <Button
                                 size="sm"
@@ -583,11 +583,11 @@ export function PortalSubmissionsList({ token }: { token: string | null }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <PortalLiveDispatchDialog
-        open={!!liveTarget}
-        onOpenChange={(o) => !o && setLiveTarget(null)}
-        submissionId={liveTarget?.id ?? null}
-        title={liveTarget?.title}
+      <PortalReportDialog
+        open={!!reportTarget}
+        onOpenChange={(o) => !o && setReportTarget(null)}
+        dispatchId={reportTarget?.dispatchId ?? null}
+        title={reportTarget?.title}
       />
     </div>
   );
