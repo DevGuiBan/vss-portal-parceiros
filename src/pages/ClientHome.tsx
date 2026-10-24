@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { LogOut, Loader2, Plus, Inbox, BookmarkPlus } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { usePartnerBranding } from "@/hooks/usePartnerBranding";
+import { PartnerLogo } from "@/components/branding/PartnerLogo";
 import { PortalProvider, usePortalContext } from "@/contexts/PortalContext";
 import { PortalSubmissionForm } from "@/components/portal/PortalSubmissionForm";
 import { PortalSubmissionsList } from "@/components/portal/PortalSubmissionsList";
@@ -46,17 +47,17 @@ function ClientShell({ slug, onSignOut }: { slug: string; onSignOut: () => void 
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-border px-6 py-4 flex items-center justify-between sticky top-0 bg-background z-10">
-        <div className="flex items-center gap-3">
-          {branding?.logo_url && <img src={branding.logo_url} alt="" className="h-8 w-8 rounded-lg object-cover" />}
-          <h1 className="text-lg font-semibold">{branding?.display_name || "Portal do Cliente"}</h1>
+      <header className="border-b border-border px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-3 sticky top-0 bg-background z-10">
+        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+          <PartnerLogo src={branding?.logo_url} size="md" rounded="lg" />
+          <h1 className="text-base sm:text-lg font-semibold truncate">{branding?.display_name || "Portal do Cliente"}</h1>
         </div>
-        <Button variant="ghost" size="sm" onClick={onSignOut}>
-          <LogOut className="h-4 w-4 mr-1.5" /> Sair
+        <Button variant="ghost" size="sm" onClick={onSignOut} className="shrink-0">
+          <LogOut className="h-4 w-4 sm:mr-1.5" /> <span className="hidden sm:inline">Sair</span>
         </Button>
       </header>
 
-      <nav className="border-b border-border px-6 flex gap-1 overflow-x-auto">
+      <nav className="border-b border-border px-4 sm:px-6 flex gap-1 overflow-x-auto">
         {TABS.map((t) => {
           const Icon = t.icon;
           const active = tab === t.key;

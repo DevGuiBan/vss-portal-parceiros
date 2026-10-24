@@ -9,31 +9,25 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { Loader2, Plus, LogOut, Users, Search, CalendarDays, ClipboardList, X } from "lucide-react";
+import { Loader2, Plus, LogOut, Users, Search, CalendarDays, ClipboardList, X, Trash2, AlertTriangle } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useAuth } from "@/hooks/useAuth";
 import { usePartnerBranding } from "@/hooks/usePartnerBranding";
+import { PartnerLogo } from "@/components/branding/PartnerLogo";
 import { callPartnerApi } from "@/lib/partnerApi";
 import { ClientUsersInline } from "@/components/parceiros/ClientUsersInline";
 import { DispatchReportStats } from "@/components/portal/DispatchReportStats";
 import { matchManualReport } from "@/lib/dispatchReport";
-import { cn } from "@/lib/utils";
 
 interface ClientStat { id: string; name: string; email: string | null; unit_price: number; sent: number; delivered: number }
 interface ClientSubmission { id: string; action_name?: string | null; created_at: string; demand_id?: string | null; demand_status?: string | null }
 interface ManualReportRow { demand_id: string | null; sent: number; delivered: number; failures: number }
 
-type NavKey = "clients";
-const NAV: { key: NavKey; label: string; icon: typeof Users }[] = [
-  { key: "clients", label: "Clientes", icon: Users },
-];
-
 export default function PartnerDashboard() {
   const { slug = "" } = useParams();
   const { user, loading: authLoading, signOut } = useAuth();
   const { branding } = usePartnerBranding(slug);
-  const [nav] = useState<NavKey>("clients");
   const [loading, setLoading] = useState(true);
   const [forbidden, setForbidden] = useState(false);
   const [clients, setClients] = useState<ClientStat[]>([]);
@@ -55,6 +49,10 @@ export default function PartnerDashboard() {
   const [detailReports, setDetailReports] = useState<ManualReportRow[]>([]);
   const [priceDraft, setPriceDraft] = useState("");
   const [savingPrice, setSavingPrice] = useState(false);
+
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -134,6 +132,23 @@ export default function PartnerDashboard() {
     }
   };
 
+  const deleteClient = async () => {
+    if (!selected || deleteConfirmText.trim() !== selected.name) return;
+    setDeleting(true);
+    try {
+      await callPartnerApi("delete-client", { responsible_id: selected.id });
+      toast.success("Cliente excluído");
+      setClients((prev) => prev.filter((c) => c.id !== selected.id));
+      setDeleteOpen(false);
+      setDeleteConfirmText("");
+      setSelected(null);
+    } catch (e: any) {
+      toast.error(e?.message || "Erro ao excluir cliente");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const filteredClients = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return clients;
@@ -153,40 +168,22 @@ export default function PartnerDashboard() {
   if (forbidden) return <Navigate to={`/${slug}/login`} replace />;
 
   return (
-    <div className="min-h-screen flex bg-background text-foreground">
-      <aside className="w-56 shrink-0 border-r border-border flex flex-col">
-        <div className="px-4 py-4 flex items-center gap-2 border-b border-border">
-          {branding?.logo_url && <img src={branding.logo_url} alt="" className="h-7 w-7 rounded-lg object-cover" />}
-          <span className="text-sm font-semibold truncate">{branding?.display_name || "Portal do Parceiro"}</span>
+    <div className="min-h-screen bg-background text-foreground">
+      <header className="border-b border-border px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-3 sticky top-0 bg-background z-10">
+        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+          <PartnerLogo src={branding?.logo_url} size="sm" rounded="lg" />
+          <span className="text-sm sm:text-base font-semibold truncate">{branding?.display_name || "Portal do Parceiro"}</span>
         </div>
-        <nav className="flex-1 px-2 py-3 space-y-1">
-          {NAV.map((n) => {
-            const Icon = n.icon;
-            return (
-              <div
-                key={n.key}
-                className={cn(
-                  "flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium",
-                  nav === n.key ? "bg-primary/10 text-primary" : "text-muted-foreground",
-                )}
-              >
-                <Icon className="h-4 w-4" /> {n.label}
-              </div>
-            );
-          })}
-        </nav>
-        <div className="px-2 py-3 border-t border-border">
-          <Button variant="ghost" size="sm" className="w-full justify-start" onClick={signOut}>
-            <LogOut className="h-4 w-4 mr-1.5" /> Sair
-          </Button>
-        </div>
-      </aside>
+        <Button variant="ghost" size="sm" onClick={signOut} className="shrink-0">
+          <LogOut className="h-4 w-4 sm:mr-1.5" /> <span className="hidden sm:inline">Sair</span>
+        </Button>
+      </header>
 
-      <main className="flex-1 px-6 py-8 space-y-6 max-w-5xl">
-        <div className="grid grid-cols-3 gap-4">
-          <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Clientes</CardTitle></CardHeader><CardContent className="text-2xl font-bold">{filteredClients.length}</CardContent></Card>
-          <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Enviadas</CardTitle></CardHeader><CardContent className="text-2xl font-bold">{totals.sent}</CardContent></Card>
-          <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Entregues</CardTitle></CardHeader><CardContent className="text-2xl font-bold">{totals.delivered}</CardContent></Card>
+      <main className="px-4 sm:px-6 py-6 sm:py-8 space-y-6 max-w-5xl mx-auto">
+        <div className="grid grid-cols-3 gap-2 sm:gap-4">
+          <Card><CardHeader className="p-3 sm:p-6 pb-1.5 sm:pb-2"><CardTitle className="text-xs sm:text-sm text-muted-foreground">Clientes</CardTitle></CardHeader><CardContent className="p-3 sm:p-6 pt-0 text-lg sm:text-2xl font-bold">{filteredClients.length}</CardContent></Card>
+          <Card><CardHeader className="p-3 sm:p-6 pb-1.5 sm:pb-2"><CardTitle className="text-xs sm:text-sm text-muted-foreground">Enviadas</CardTitle></CardHeader><CardContent className="p-3 sm:p-6 pt-0 text-lg sm:text-2xl font-bold">{totals.sent}</CardContent></Card>
+          <Card><CardHeader className="p-3 sm:p-6 pb-1.5 sm:pb-2"><CardTitle className="text-xs sm:text-sm text-muted-foreground">Entregues</CardTitle></CardHeader><CardContent className="p-3 sm:p-6 pt-0 text-lg sm:text-2xl font-bold">{totals.delivered}</CardContent></Card>
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -194,19 +191,19 @@ export default function PartnerDashboard() {
           <Button size="sm" onClick={() => setCreateOpen(true)}><Plus className="h-3.5 w-3.5 mr-1" /> Novo cliente</Button>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 min-w-[220px]">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+          <div className="relative flex-1 min-w-0">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar por nome ou e-mail" className="pl-9" />
           </div>
           <Popover open={rangeOpen} onOpenChange={setRangeOpen}>
             <PopoverTrigger asChild>
-              <Button variant="outline" size="sm" className="h-9">
+              <Button variant="outline" size="sm" className="h-9 w-full sm:w-auto justify-start sm:justify-center">
                 <CalendarDays className="h-3.5 w-3.5 mr-1.5" /> {periodLabel}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-3 space-y-2" align="end">
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <div className="space-y-1">
                   <Label className="text-xs">De</Label>
                   <Calendar mode="single" selected={range.from} onSelect={(d) => setRange((r) => ({ ...r, from: d }))} initialFocus />
@@ -232,30 +229,35 @@ export default function PartnerDashboard() {
                 {clients.length === 0 ? "Nenhum cliente cadastrado ainda." : "Nenhum cliente encontrado para essa busca."}
               </p>
             ) : (
-              <table className="w-full text-sm">
-                <thead className="text-xs uppercase text-muted-foreground border-b border-border">
-                  <tr>
-                    <th className="text-left py-2 px-4">Cliente</th>
-                    <th className="text-left py-2 px-4">E-mail</th>
-                    <th className="text-right py-2 px-4">Enviadas</th>
-                    <th className="text-right py-2 px-4">Entregues</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredClients.map((c) => (
-                    <tr
-                      key={c.id}
-                      className="border-b border-border/60 cursor-pointer hover:bg-muted/40"
-                      onClick={() => openClient(c)}
-                    >
-                      <td className="py-2 px-4 font-medium">{c.name}</td>
-                      <td className="py-2 px-4 text-muted-foreground">{c.email || "—"}</td>
-                      <td className="py-2 px-4 text-right tabular-nums">{c.sent}</td>
-                      <td className="py-2 px-4 text-right tabular-nums">{c.delivered}</td>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-xs uppercase text-muted-foreground border-b border-border">
+                    <tr>
+                      <th className="text-left py-2 px-4">Cliente</th>
+                      <th className="text-left py-2 px-4 hidden sm:table-cell">E-mail</th>
+                      <th className="text-right py-2 px-4">Enviadas</th>
+                      <th className="text-right py-2 px-4">Entregues</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {filteredClients.map((c) => (
+                      <tr
+                        key={c.id}
+                        className="border-b border-border/60 cursor-pointer hover:bg-muted/40"
+                        onClick={() => openClient(c)}
+                      >
+                        <td className="py-2 px-4 font-medium">
+                          <div className="truncate max-w-[40vw] sm:max-w-none">{c.name}</div>
+                          <div className="text-xs text-muted-foreground truncate max-w-[40vw] sm:hidden">{c.email || "—"}</div>
+                        </td>
+                        <td className="py-2 px-4 text-muted-foreground hidden sm:table-cell">{c.email || "—"}</td>
+                        <td className="py-2 px-4 text-right tabular-nums">{c.sent}</td>
+                        <td className="py-2 px-4 text-right tabular-nums">{c.delivered}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </CardContent>
         </Card>
@@ -291,7 +293,16 @@ export default function PartnerDashboard() {
         </DialogContent>
       </Dialog>
 
-      <Sheet open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
+      <Sheet
+        open={!!selected}
+        onOpenChange={(o) => {
+          if (!o) {
+            setSelected(null);
+            setDeleteOpen(false);
+            setDeleteConfirmText("");
+          }
+        }}
+      >
         <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
           <SheetHeader>
             <SheetTitle>{selected?.name}</SheetTitle>
@@ -351,10 +362,59 @@ export default function PartnerDashboard() {
                   </div>
                 )}
               </div>
+
+              <div className="pt-2 border-t border-border">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                  onClick={() => setDeleteOpen(true)}
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Excluir cliente
+                </Button>
+              </div>
             </div>
           )}
         </SheetContent>
       </Sheet>
+
+      <Dialog open={deleteOpen} onOpenChange={(o) => { setDeleteOpen(o); if (!o) setDeleteConfirmText(""); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-4 w-4" /> Excluir {selected?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <p className="text-muted-foreground">Esta ação não pode ser desfeita. Ao excluir este cliente:</p>
+            <ul className="space-y-1.5 text-muted-foreground">
+              <li className="flex gap-2"><X className="h-3.5 w-3.5 text-destructive shrink-0 mt-0.5" /> O cadastro do cliente, o acesso de login (e-mail/senha) e todas as solicitações enviadas por ele no portal serão apagados definitivamente.</li>
+              <li className="flex gap-2"><ClipboardList className="h-3.5 w-3.5 text-emerald-600 shrink-0 mt-0.5" /> Os relatórios de disparos já lançados <strong>não</strong> são apagados — continuam preservados internamente para controle da operação.</li>
+            </ul>
+            <div className="space-y-1.5 pt-1">
+              <Label className="text-xs">Digite <span className="font-semibold">{selected?.name}</span> para confirmar</Label>
+              <Input
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                placeholder={selected?.name}
+                autoFocus
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancelar</Button>
+            <Button
+              variant="destructive"
+              onClick={deleteClient}
+              disabled={deleting || deleteConfirmText.trim() !== selected?.name}
+            >
+              {deleting && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}
+              Excluir definitivamente
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

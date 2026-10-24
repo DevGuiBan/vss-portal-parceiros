@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { usePartnerBranding } from "@/hooks/usePartnerBranding";
+import { PartnerLogo } from "@/components/branding/PartnerLogo";
 import { guardedSignIn } from "@/lib/guardedLogin";
 import { callPartnerApi } from "@/lib/partnerApi";
 import { callPortalApi } from "@/lib/portalApi";
@@ -76,15 +77,11 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen w-full bg-background text-foreground flex items-center justify-center px-6 py-10">
+    <div className="min-h-screen w-full bg-background text-foreground flex items-center justify-center px-4 sm:px-6 py-10">
       <div className="w-full max-w-md">
         <div className="text-center mb-6">
-          {branding?.logo_url ? (
-            <img src={branding.logo_url} alt="" className="h-14 w-14 mx-auto rounded-2xl object-cover ring-1 ring-border" />
-          ) : (
-            <div className="h-14 w-14 mx-auto rounded-2xl bg-primary/10 ring-1 ring-primary/20" />
-          )}
-          <h1 className="text-2xl font-bold tracking-tight mt-4">
+          <PartnerLogo src={branding?.logo_url} size="lg" rounded="2xl" className="mx-auto" />
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight mt-4">
             {branding?.display_name || "Portal do Parceiro"}
           </h1>
           <p className="text-sm text-muted-foreground mt-1">Entre com seu e-mail e senha</p>
