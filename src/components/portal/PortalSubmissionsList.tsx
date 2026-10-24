@@ -85,7 +85,7 @@ export function PortalSubmissionsList({ token }: { token: string | null }) {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [reportTarget, setReportTarget] = useState<{ dispatchId: string | null; title: string } | null>(null);
+  const [reportTarget, setReportTarget] = useState<{ demandId: string | null; title: string } | null>(null);
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
@@ -409,7 +409,7 @@ export function PortalSubmissionsList({ token }: { token: string | null }) {
                                 size="sm"
                                 variant="outline"
                                 className="flex-1"
-                                onClick={() => setReportTarget({ dispatchId: s.dispatch_id ?? null, title })}
+                                onClick={() => setReportTarget({ demandId: s.demand_id ?? null, title })}
                               >
                                 <ClipboardList className="h-3.5 w-3.5 mr-1" /> Ver relatório
                               </Button>
@@ -586,7 +586,7 @@ export function PortalSubmissionsList({ token }: { token: string | null }) {
       <PortalReportDialog
         open={!!reportTarget}
         onOpenChange={(o) => !o && setReportTarget(null)}
-        dispatchId={reportTarget?.dispatchId ?? null}
+        demandId={reportTarget?.demandId ?? null}
         title={reportTarget?.title}
       />
     </div>

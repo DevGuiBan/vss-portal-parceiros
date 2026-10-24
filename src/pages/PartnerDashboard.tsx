@@ -17,12 +17,12 @@ import { usePartnerBranding } from "@/hooks/usePartnerBranding";
 import { callPartnerApi } from "@/lib/partnerApi";
 import { ClientUsersInline } from "@/components/parceiros/ClientUsersInline";
 import { DispatchReportStats } from "@/components/portal/DispatchReportStats";
-import { matchDispatchReport } from "@/lib/dispatchReport";
+import { matchManualReport } from "@/lib/dispatchReport";
 import { cn } from "@/lib/utils";
 
-interface ClientStat { id: string; name: string; email: string | null; sent: number; delivered: number }
-interface ClientSubmission { id: string; action_name?: string | null; created_at: string; dispatch_id?: string | null; demand_status?: string | null }
-interface PortalReportRow { dispatch_id: string; quantity_sent: number; delivered: number; failures: number }
+interface ClientStat { id: string; name: string; email: string | null; unit_price: number; sent: number; delivered: number }
+interface ClientSubmission { id: string; action_name?: string | null; created_at: string; demand_id?: string | null; demand_status?: string | null }
+interface ManualReportRow { demand_id: string | null; sent: number; delivered: number; failures: number }
 
 type NavKey = "clients";
 const NAV: { key: NavKey; label: string; icon: typeof Users }[] = [
@@ -46,12 +46,15 @@ export default function PartnerDashboard() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [unitPrice, setUnitPrice] = useState("");
   const [saving, setSaving] = useState(false);
 
   const [selected, setSelected] = useState<ClientStat | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailSubmissions, setDetailSubmissions] = useState<ClientSubmission[]>([]);
-  const [detailReports, setDetailReports] = useState<PortalReportRow[]>([]);
+  const [detailReports, setDetailReports] = useState<ManualReportRow[]>([]);
+  const [priceDraft, setPriceDraft] = useState("");
+  const [savingPrice, setSavingPrice] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -76,11 +79,16 @@ export default function PartnerDashboard() {
       toast.error("Nome, e-mail e senha (min. 8) são obrigatórios");
       return;
     }
+    const priceN = unitPrice.trim() ? Number(unitPrice.replace(",", ".")) : 0;
+    if (!Number.isFinite(priceN) || priceN < 0) {
+      toast.error("Custo unitário inválido");
+      return;
+    }
     setSaving(true);
     try {
-      await callPartnerApi("create-client", { name: name.trim(), email: email.trim(), password });
+      await callPartnerApi("create-client", { name: name.trim(), email: email.trim(), password, unit_price: priceN });
       toast.success("Cliente cadastrado");
-      setCreateOpen(false); setName(""); setEmail(""); setPassword("");
+      setCreateOpen(false); setName(""); setEmail(""); setPassword(""); setUnitPrice("");
       load();
     } catch (e: any) {
       toast.error(e?.message || "Erro ao cadastrar cliente");
@@ -91,17 +99,38 @@ export default function PartnerDashboard() {
 
   const openClient = async (c: ClientStat) => {
     setSelected(c);
+    setPriceDraft(c.unit_price ? String(c.unit_price) : "");
     setDetailLoading(true);
     setDetailSubmissions([]);
     setDetailReports([]);
     try {
       const j = await callPartnerApi("get-client-overview", { responsible_id: c.id });
       setDetailSubmissions(j.submissions || []);
-      setDetailReports(j.dispatch_reports || []);
+      setDetailReports(j.manual_reports || []);
     } catch (e: any) {
       toast.error(e?.message || "Erro ao carregar cliente");
     } finally {
       setDetailLoading(false);
+    }
+  };
+
+  const savePrice = async () => {
+    if (!selected) return;
+    const priceN = Number(priceDraft.replace(",", "."));
+    if (!Number.isFinite(priceN) || priceN < 0) {
+      toast.error("Custo unitário inválido");
+      return;
+    }
+    setSavingPrice(true);
+    try {
+      await callPartnerApi("update-client", { responsible_id: selected.id, unit_price: priceN });
+      toast.success("Custo unitário atualizado");
+      setClients((prev) => prev.map((c) => (c.id === selected.id ? { ...c, unit_price: priceN } : c)));
+      setSelected((s) => (s ? { ...s, unit_price: priceN } : s));
+    } catch (e: any) {
+      toast.error(e?.message || "Erro ao atualizar custo unitário");
+    } finally {
+      setSavingPrice(false);
     }
   };
 
@@ -239,6 +268,18 @@ export default function PartnerDashboard() {
             <div className="space-y-1.5"><Label>Nome</Label><Input value={name} onChange={(e) => setName(e.target.value)} autoFocus /></div>
             <div className="space-y-1.5"><Label>E-mail</Label><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></div>
             <div className="space-y-1.5"><Label>Senha</Label><Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mínimo 8 caracteres" /></div>
+            <div className="space-y-1.5">
+              <Label>Custo unitário do disparo (R$)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                value={unitPrice}
+                onChange={(e) => setUnitPrice(e.target.value)}
+                placeholder="0.00"
+              />
+              <p className="text-[11px] text-muted-foreground">Visível apenas para você — o cliente não vê esse valor.</p>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancelar</Button>
@@ -260,6 +301,25 @@ export default function PartnerDashboard() {
               <ClientUsersInline responsibleId={selected.id} clientName={selected.name} />
 
               <div className="space-y-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Custo unitário do disparo (R$)</span>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={priceDraft}
+                    onChange={(e) => setPriceDraft(e.target.value)}
+                    className="h-8"
+                  />
+                  <Button size="sm" className="h-8" onClick={savePrice} disabled={savingPrice}>
+                    {savingPrice && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}
+                    Salvar
+                  </Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground">Visível apenas para você — o cliente não vê esse valor.</p>
+              </div>
+
+              <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <ClipboardList className="h-3.5 w-3.5 text-muted-foreground" />
                   <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Relatório de disparos</span>
@@ -271,7 +331,7 @@ export default function PartnerDashboard() {
                 ) : (
                   <div className="space-y-3">
                     {detailSubmissions.map((s) => {
-                      const totals = matchDispatchReport(s.dispatch_id, detailReports);
+                      const totals = matchManualReport(s.demand_id, detailReports);
                       return (
                         <div key={s.id} className="rounded-md border border-border/60 p-3 space-y-2">
                           <div className="flex items-center justify-between">

@@ -2,19 +2,19 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/components/ui/button";
 import { ClipboardList, RefreshCw } from "lucide-react";
 import { usePortal } from "@/hooks/usePortal";
-import { matchDispatchReport } from "@/lib/dispatchReport";
+import { matchManualReport } from "@/lib/dispatchReport";
 import { DispatchReportStats } from "@/components/portal/DispatchReportStats";
 
 interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  dispatchId: string | null;
+  demandId: string | null;
   title?: string;
 }
 
-export function PortalReportDialog({ open, onOpenChange, dispatchId, title }: Props) {
+export function PortalReportDialog({ open, onOpenChange, demandId, title }: Props) {
   const { overview, loadOverview } = usePortal(null);
-  const totals = matchDispatchReport(dispatchId, overview?.reports || []);
+  const totals = matchManualReport(demandId, overview?.manual_reports || []);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

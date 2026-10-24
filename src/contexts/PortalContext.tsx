@@ -25,6 +25,7 @@ interface Submission {
   dispatch_id?: string | null;
   action_name?: string | null;
   demand_status?: string | null;
+  demand_id?: string | null;
 }
 
 export interface PortalDispatch {
@@ -62,6 +63,9 @@ export interface PortalManualReport {
   date: string;
   sent: number;
   delivered: number;
+  failures?: number;
+  delivery_rate?: number;
+  demand_id?: string | null;
   unit_price?: number | null;
   saved_at: string;
 }
