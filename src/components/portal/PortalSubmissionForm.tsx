@@ -1365,7 +1365,7 @@ export function PortalSubmissionForm({
         )}
       </div>
 
-      <div className="lg:sticky lg:top-4">
+      <div className="lg:sticky lg:top-32">
         <WhatsAppPreview
           senderName={wabaName || ""}
           senderPhoto={wabaPhotoUrl}

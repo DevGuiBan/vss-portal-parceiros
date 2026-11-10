@@ -4,27 +4,29 @@
 
 @layer base {
   :root {
-    --background: 220 20% 97%;
-    --foreground: 220 20% 10%;
+    --background: 220 23% 97%;
+    --foreground: 222 25% 12%;
     --card: 0 0% 100%;
-    --card-foreground: 220 20% 10%;
+    --card-foreground: 222 25% 12%;
     --popover: 0 0% 100%;
-    --popover-foreground: 220 20% 10%;
-    --primary: 142 71% 45%;
+    --popover-foreground: 222 25% 12%;
+    /* --primary e --ring são sobrescritos em runtime com a cor do parceiro. */
+    --primary: 142 71% 40%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 220 14% 92%;
-    --secondary-foreground: 220 20% 10%;
-    --muted: 220 14% 95%;
-    --muted-foreground: 220 10% 46%;
-    --accent: 142 71% 45%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 84% 60%;
+    --secondary: 220 14% 93%;
+    --secondary-foreground: 222 25% 12%;
+    --muted: 220 16% 94.5%;
+    --muted-foreground: 220 9% 40%;
+    /* Accent neutro: hover de botões ghost/outline sem "pintar" com a cor primária. */
+    --accent: 220 16% 93%;
+    --accent-foreground: 222 25% 12%;
+    --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
-    --success: 142 71% 45%;
-    --warning: 45 93% 47%;
-    --border: 220 13% 88%;
-    --input: 220 13% 88%;
-    --ring: 142 71% 45%;
+    --success: 142 71% 38%;
+    --warning: 38 92% 50%;
+    --border: 220 14% 89%;
+    --input: 220 14% 86%;
+    --ring: 142 71% 40%;
     --radius: 0.625rem;
   }
 }
@@ -33,7 +35,22 @@
   border-color: hsl(var(--border));
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   background-color: hsl(var(--background));
   color: hsl(var(--foreground));
+  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Evita zoom automático do iOS em inputs < 16px. */
+@media (max-width: 640px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
 }

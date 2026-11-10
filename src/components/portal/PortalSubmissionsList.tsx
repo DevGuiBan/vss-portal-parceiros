@@ -57,17 +57,11 @@ import {
 import { cn } from "@/lib/utils";
 import { normalizeSearch } from "@/lib/normalizeSearch";
 import { PortalReportDialog } from "@/components/portal/PortalReportDialog";
+import { DeliveryBar, RateBadge } from "@/components/common/Metrics";
+import { effectiveStatus, statusMeta, STATUS_ORDER } from "@/lib/demandStatus";
+import { matchManualReport } from "@/lib/dispatchReport";
+import { fmtInt } from "@/lib/format";
 
-const DEMAND_STATUS_META: Record<string, { label: string; cls: string }> = {
-  pendente: { label: "A Fazer", cls: "bg-warning/15 text-warning border-warning/30" },
-  conexao_numero: { label: "Conexão de Número", cls: "bg-indigo-500/15 text-indigo-500 border-indigo-500/30" },
-  aprovacao_template: { label: "Template em Aprovação", cls: "bg-amber-500/15 text-amber-500 border-amber-500/30" },
-  producao: { label: "Em Produção", cls: "bg-fuchsia-500/15 text-fuchsia-500 border-fuchsia-500/30" },
-  pronto: { label: "Pronto", cls: "bg-emerald-500/15 text-emerald-500 border-emerald-500/30" },
-  disparado: { label: "Disparado", cls: "bg-success/15 text-success border-success/30" },
-  remarcado: { label: "Remarcado", cls: "bg-sky-500/15 text-sky-500 border-sky-500/30" },
-  cancelado: { label: "Cancelado", cls: "bg-destructive/15 text-destructive border-destructive/30" },
-};
 
 export function PortalSubmissionsList({ token }: { token: string | null }) {
   const { overview, loadOverview, requestChange, uploadFile, deleteSubmission } = usePortal(token);
@@ -150,7 +144,7 @@ export function PortalSubmissionsList({ token }: { token: string | null }) {
     const q = normalizeSearch(search).trim();
     return submissions.filter((s: any) => {
       if (statusFilter !== "all") {
-        const effective = s.demand_status || s.status;
+        const effective = effectiveStatus(s);
         if (effective !== statusFilter) return false;
       }
       if (q) {
@@ -199,15 +193,9 @@ export function PortalSubmissionsList({ token }: { token: string | null }) {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos os status</SelectItem>
-                <SelectItem value="pending">Pendente</SelectItem>
-                <SelectItem value="pendente">A Fazer</SelectItem>
-                <SelectItem value="conexao_numero">Conexão de Número</SelectItem>
-                <SelectItem value="aprovacao_template">Template em Aprovação</SelectItem>
-                <SelectItem value="producao">Em Produção</SelectItem>
-                <SelectItem value="pronto">Pronto</SelectItem>
-                <SelectItem value="disparado">Disparado</SelectItem>
-                <SelectItem value="remarcado">Remarcado</SelectItem>
-                <SelectItem value="cancelado">Cancelado</SelectItem>
+                {STATUS_ORDER.map((k) => (
+                  <SelectItem key={k} value={k}>{statusMeta(k).label}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -250,7 +238,8 @@ export function PortalSubmissionsList({ token }: { token: string | null }) {
             <div className="space-y-3">
               {visible.map((s: any) => {
                 const ds = s.demand_status as string | null | undefined;
-                const meta = ds ? DEMAND_STATUS_META[ds] : null;
+                const meta = statusMeta(effectiveStatus(s));
+                const totals = matchManualReport(s.demand_id, overview?.manual_reports || []);
                 const title = (s.action_name || "").trim() || (s.message_text || "").slice(0, 60) || "(sem nome)";
                 const adminDeleted = !!s.admin_deleted_at;
                 const demandLocked = !!ds && ds !== "pendente";
@@ -301,24 +290,21 @@ export function PortalSubmissionsList({ token }: { token: string | null }) {
                         <p className="text-xs text-muted-foreground">
                           {new Date(s.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}
                         </p>
+                        {totals && (
+                          <div className="flex items-center gap-2 mt-1.5 max-w-xs">
+                            <DeliveryBar sent={totals.sent} delivered={totals.delivered} failures={totals.failures} className="h-1.5 flex-1" />
+                            <span className="text-[11px] text-muted-foreground tabular-nums whitespace-nowrap">{fmtInt(totals.delivered)}/{fmtInt(totals.sent)}</span>
+                            <RateBadge sent={totals.sent} delivered={totals.delivered} className="px-1.5 py-0 text-[10px]" />
+                          </div>
+                        )}
                       </div>
                       {hasPendingChange && (
                         <span className="text-[10px] px-2 py-0.5 rounded-full shrink-0 bg-amber-500/15 text-amber-600 inline-flex items-center gap-1">
                           <Clock className="h-2.5 w-2.5" /> Alteração solicitada
                         </span>
                       )}
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "shrink-0",
-                          meta
-                            ? meta.cls
-                            : s.status === "pending"
-                              ? "bg-warning/15 text-warning border-warning/30"
-                              : "bg-primary/15 text-primary border-primary/30",
-                        )}
-                      >
-                        {meta?.label || (s.status === "pending" ? "Pendente" : "Processado")}
+                      <Badge variant="outline" title={meta.description} className={cn("shrink-0", meta.cls)}>
+                        {meta.label}
                       </Badge>
                       {expanded ? <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />}
                     </button>
@@ -419,7 +405,7 @@ export function PortalSubmissionsList({ token }: { token: string | null }) {
                                 className="flex-1"
                                 disabled={hasPendingChange}
                                 onClick={() => {
-                                  setLockedInfo({ id: s.id, title, status: meta?.label || "Em andamento" });
+                                  setLockedInfo({ id: s.id, title, status: meta.label });
                                   setRequestMessage("");
                                 }}
                               >
