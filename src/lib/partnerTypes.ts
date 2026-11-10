@@ -1,0 +1,29 @@
+export interface ClientStat {
+  id: string;
+  name: string;
+  email: string | null;
+  unit_price: number;
+  sent: number;
+  delivered: number;
+}
+
+export interface ClientSubmission {
+  id: string;
+  action_name?: string | null;
+  created_at: string;
+  demand_id?: string | null;
+  demand_status?: string | null;
+  status?: string | null;
+}
+
+export interface ManualReportRow {
+  demand_id: string | null;
+  sent: number;
+  delivered: number;
+  failures: number;
+}
+
+/** Faturamento estimado = mensagens enviadas × custo unitário. */
+export function estimatedRevenue(c: Pick<ClientStat, "sent" | "unit_price">) {
+  return (Number(c.sent) || 0) * (Number(c.unit_price) || 0);
+}

@@ -9,11 +9,13 @@ interface ManualReportLike {
  * Soma os manual_reports (lançados pelos operadores no app principal, via
  * daily_demands) vinculados ao demand_id de uma solicitação do portal.
  */
-export function matchManualReport(demandId: string | null | undefined, reports: ManualReportLike[]) {
+export interface ReportTotals { sent: number; delivered: number; failures: number }
+
+export function matchManualReport(demandId: string | null | undefined, reports: ManualReportLike[]): ReportTotals | null {
   if (!demandId) return null;
   const matches = reports.filter((r) => r.demand_id === demandId);
   if (matches.length === 0) return null;
-  return matches.reduce(
+  return matches.reduce<ReportTotals>(
     (acc, r) => ({
       sent: acc.sent + (Number(r.sent) || 0),
       delivered: acc.delivered + (Number(r.delivered) || 0),
