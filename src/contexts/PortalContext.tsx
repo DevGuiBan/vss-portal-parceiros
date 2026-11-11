@@ -76,6 +76,8 @@ export interface PortalOverview {
   dispatches: PortalDispatch[];
   reports: PortalReport[];
   manual_reports?: PortalManualReport[];
+  /** Totais de todos os relatórios somados no banco (portal-api novo). */
+  report_totals?: { sent: number; delivered: number; failures: number; reports: number } | null;
 }
 
 export interface ResponsibleInfo {

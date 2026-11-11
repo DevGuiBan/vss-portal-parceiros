@@ -23,11 +23,18 @@ export function ClientOverview({ onNew, onPresets, onSeeAll }: Props) {
   const data = useMemo(() => {
     const subs = (overview?.submissions || []).filter((s: any) => !s.admin_deleted_at);
     const reports = overview?.manual_reports || [];
+    // Preferir os totais somados no banco: manual_reports vem limitado a
+    // 200 linhas, então somar no navegador erraria para quem tem mais.
     let sent = 0, delivered = 0, failures = 0;
-    for (const r of reports) {
-      sent += Number(r.sent) || 0;
-      delivered += Number(r.delivered) || 0;
-      failures += Number(r.failures) || 0;
+    const totals = overview?.report_totals;
+    if (totals) {
+      ({ sent, delivered, failures } = totals);
+    } else {
+      for (const r of reports) {
+        sent += Number(r.sent) || 0;
+        delivered += Number(r.delivered) || 0;
+        failures += Number(r.failures) || 0;
+      }
     }
     const inProgress = subs.filter((s) => statusMeta(effectiveStatus(s)).group === "progress").length;
     const recent = [...subs]

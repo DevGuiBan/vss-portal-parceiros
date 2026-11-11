@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
@@ -39,9 +39,25 @@ interface Props {
 
 type SortKey = "recent" | "oldest" | "sent";
 
+interface ReportTotals {
+  sent: number;
+  delivered: number;
+  failures: number;
+  reports: number;
+}
+
 interface Overview {
   submissions: ClientSubmission[];
   reports: ManualReportRow[];
+  /** Somado no Postgres; null quando a API ainda não suporta (versão antiga). */
+  totals: ReportTotals | null;
+  nextBefore: string | null;
+}
+
+interface ExtraPages {
+  submissions: ClientSubmission[];
+  reports: ManualReportRow[];
+  nextBefore: string | null;
 }
 
 interface Row {
@@ -51,7 +67,16 @@ interface Row {
 }
 
 const PAGE = 30;
-const EMPTY: Overview = { submissions: [], reports: [] };
+const EMPTY: Overview = { submissions: [], reports: [], totals: null, nextBefore: null };
+
+function parseOverview(j: any): Overview {
+  return {
+    submissions: j.submissions || [],
+    reports: j.manual_reports || [],
+    totals: j.report_totals ?? null,
+    nextBefore: j.has_more ? j.next_before ?? null : null,
+  };
+}
 
 function downloadCsv(filename: string, rows: (string | number)[][]) {
   const csv = rows
@@ -80,6 +105,10 @@ export function ClientDetailSheet({ client, initialTab, initialRange, slug, part
   const [range, setRange] = useState<DateRange>(initialRange);
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<Overview>(EMPTY);
+  // Páginas seguintes (solicitações mais antigas), fora do cache.
+  const [extra, setExtra] = useState<ExtraPages | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const currentKeyRef = useRef("");
 
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -112,20 +141,44 @@ export function ClientDetailSheet({ client, initialTab, initialRange, slug, part
     if (!client) return;
     let cancelled = false;
     const key = overviewKey(client.id, range);
+    currentKeyRef.current = key;
     const cached = peek<Overview>(key);
     setData(cached ?? EMPTY);
+    setExtra(null);
     setLoading(!cached);
-    cachedFetch(key, 60_000, async () => {
-      const j = await callPartnerApi("get-client-overview", { responsible_id: client.id, ...rangeToApi(range) });
-      return { submissions: j.submissions || [], reports: j.manual_reports || [] } as Overview;
-    })
+    cachedFetch(key, 60_000, async () =>
+      parseOverview(await callPartnerApi("get-client-overview", { responsible_id: client.id, ...rangeToApi(range) })),
+    )
       .then((ov) => { if (!cancelled) setData(ov); })
       .catch((e: any) => !cancelled && toast.error(e?.message || "Erro ao carregar relatório do cliente"))
       .finally(() => !cancelled && setLoading(false));
     return () => { cancelled = true; };
   }, [client?.id, range.from?.getTime(), range.to?.getTime()]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const { submissions, reports } = data;
+  const submissions = useMemo(() => (extra ? [...data.submissions, ...extra.submissions] : data.submissions), [data, extra]);
+  const reports = useMemo(() => (extra ? [...data.reports, ...extra.reports] : data.reports), [data, extra]);
+  const nextBefore = extra ? extra.nextBefore : data.nextBefore;
+
+  const loadOlder = async () => {
+    if (!client || !nextBefore) return;
+    const keyAtStart = overviewKey(client.id, range);
+    setLoadingMore(true);
+    try {
+      const page = parseOverview(
+        await callPartnerApi("get-client-overview", { responsible_id: client.id, ...rangeToApi(range), before: nextBefore }),
+      );
+      if (currentKeyRef.current !== keyAtStart) return;
+      setExtra((prev) => ({
+        submissions: [...(prev?.submissions || []), ...page.submissions],
+        reports: [...(prev?.reports || []), ...page.reports],
+        nextBefore: page.nextBefore,
+      }));
+    } catch (e: any) {
+      toast.error(e?.message || "Erro ao carregar demandas anteriores");
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const rows: Row[] = useMemo(
     () => submissions.map((sub) => ({ sub, status: effectiveStatus(sub), totals: matchManualReport(sub.demand_id, reports) })),
@@ -137,12 +190,22 @@ export function ClientDetailSheet({ client, initialTab, initialRange, slug, part
     // para bater com os números da lista/dashboard. Relatórios sem demanda
     // listada (lançamentos avulsos) entram no total e são sinalizados.
     let sent = 0, delivered = 0, failures = 0, withReport = 0, unlinkedReports = 0;
-    const listedDemandIds = new Set(rows.map((r) => r.sub.demand_id).filter(Boolean));
-    for (const rep of reports) {
-      sent += Number(rep.sent) || 0;
-      delivered += Number(rep.delivered) || 0;
-      failures += Number(rep.failures) || 0;
-      if (!rep.demand_id || !listedDemandIds.has(rep.demand_id)) unlinkedReports++;
+    const totals = data.totals;
+    if (totals) {
+      // API nova: totais do período somados no banco (não dependem de
+      // quantas demandas foram carregadas) e manual_reports só das listadas.
+      sent = totals.sent;
+      delivered = totals.delivered;
+      failures = totals.failures;
+      if (!nextBefore) unlinkedReports = Math.max(totals.reports - reports.length, 0);
+    } else {
+      const listedDemandIds = new Set(rows.map((r) => r.sub.demand_id).filter(Boolean));
+      for (const rep of reports) {
+        sent += Number(rep.sent) || 0;
+        delivered += Number(rep.delivered) || 0;
+        failures += Number(rep.failures) || 0;
+        if (!rep.demand_id || !listedDemandIds.has(rep.demand_id)) unlinkedReports++;
+      }
     }
     const byStatus: Record<string, number> = {};
     for (const r of rows) {
@@ -150,7 +213,7 @@ export function ClientDetailSheet({ client, initialTab, initialRange, slug, part
       if (r.totals) withReport++;
     }
     return { sent, delivered, failures, withReport, unlinkedReports, byStatus, rate: deliveryRate(sent, delivered) };
-  }, [rows, reports]);
+  }, [rows, reports, data.totals, nextBefore]);
 
   const statusesPresent = useMemo(
     () => STATUS_ORDER.filter((s) => summary.byStatus[s]).concat(Object.keys(summary.byStatus).filter((s) => !STATUS_ORDER.includes(s))),
@@ -444,7 +507,13 @@ export function ClientDetailSheet({ client, initialTab, initialRange, slug, part
                         Mostrar mais ({filteredRows.length - visibleCount} restantes)
                       </Button>
                     )}
-                    {!loading && submissions.length >= 200 && (
+                    {!loading && filteredRows.length <= visibleCount && nextBefore && (
+                      <Button variant="ghost" className="w-full text-muted-foreground" onClick={loadOlder} disabled={loadingMore}>
+                        {loadingMore && <Loader2 className="animate-spin" />}
+                        Carregar demandas anteriores
+                      </Button>
+                    )}
+                    {!loading && !data.totals && submissions.length >= 200 && (
                       <p className="text-xs text-muted-foreground text-center">
                         Mostrando as mais recentes do período. Reduza o período para ver as anteriores.
                       </p>
