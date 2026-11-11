@@ -117,7 +117,7 @@ export function ClientOverview({ onNew, onPresets, onSeeAll }: Props) {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-2">
+        <Card className="lg:col-span-2 lg:self-start">
           <details open={data.total <= 3} className="group">
           <summary className="list-none cursor-pointer select-none p-6 pb-3 flex items-center justify-between [&::-webkit-details-marker]:hidden">
             <span className="text-base font-semibold">Como sua demanda avança</span>

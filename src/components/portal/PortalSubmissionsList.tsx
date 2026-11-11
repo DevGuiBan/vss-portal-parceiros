@@ -201,7 +201,7 @@ export function PortalSubmissionsList({ token }: { token: string | null }) {
           </div>
           <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span>
-              {filtered.length} de {submissions.length} solicitação{submissions.length === 1 ? "" : "ões"}
+              {hasFilters ? `${filtered.length} de ${submissions.length}` : submissions.length} solicitaç{(hasFilters ? filtered.length : submissions.length) === 1 ? "ão" : "ões"}
             </span>
             {hasFilters && (
               <Button
