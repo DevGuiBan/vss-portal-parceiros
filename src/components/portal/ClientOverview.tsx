@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { ArrowRight, BookmarkPlus, CheckCheck, ChevronRight, Clock, Gauge, Inbox, Plus, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { DeliveryBar, EmptyState, RateBadge, StatCard } from "@/components/common/Metrics";
+import { DeliveryBar, EmptyState, StatCard } from "@/components/common/Metrics";
 import { usePortalContext } from "@/contexts/PortalContext";
 import { matchManualReport } from "@/lib/dispatchReport";
 import { DEMAND_STATUS_META, effectiveStatus, statusMeta } from "@/lib/demandStatus";
@@ -56,8 +56,8 @@ export function ClientOverview({ onNew, onPresets, onSeeAll }: Props) {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard icon={Inbox} label="Solicitações" value={fmtInt(data.total)} hint="Enviadas pelo portal" />
-        <StatCard icon={Clock} label="Em andamento" value={fmtInt(data.inProgress)} hint="Sendo preparadas pela equipe" />
+        <StatCard icon={Inbox} label="Solicitações" value={fmtInt(data.total)} />
+        <StatCard icon={Clock} label="Em andamento" value={fmtInt(data.inProgress)} />
         <StatCard icon={Send} label="Mensagens enviadas" value={fmtInt(data.sent)} hint={`${fmtInt(data.delivered)} entregues`} />
         <StatCard icon={Gauge} label="Taxa de entrega" value={fmtPct(data.rate)} valueClassName={tone.text}>
           <DeliveryBar sent={data.sent} delivered={data.delivered} failures={data.failures} className="mt-2 h-1.5" />
@@ -96,17 +96,10 @@ export function ClientOverview({ onNew, onPresets, onSeeAll }: Props) {
                             <span className="text-sm font-medium truncate">{title}</span>
                             <span title={m.description} className={cn("shrink-0 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium", m.cls)}>{m.label}</span>
                           </div>
-                          {totals ? (
-                            <div className="flex items-center gap-2">
-                              <DeliveryBar sent={totals.sent} delivered={totals.delivered} failures={totals.failures} className="h-1.5 flex-1" />
-                              <span className="text-[11px] text-muted-foreground tabular-nums">{fmtInt(totals.sent)} enviadas</span>
-                              <RateBadge sent={totals.sent} delivered={totals.delivered} />
-                            </div>
-                          ) : (
-                            <p className="text-xs text-muted-foreground">
-                              {new Date(s.created_at).toLocaleDateString("pt-BR")} · {m.description}
-                            </p>
-                          )}
+                          <p className="text-xs text-muted-foreground tabular-nums">
+                            {new Date(s.created_at).toLocaleDateString("pt-BR")}
+                            {totals && <> · {fmtInt(totals.sent)} enviadas · <span className={RATE_TONE_CLASS[rateTone(deliveryRate(totals.sent, totals.delivered))].text}>{fmtPct(deliveryRate(totals.sent, totals.delivered))} entregue</span></>}
+                          </p>
                         </div>
                       </button>
                     </li>
@@ -118,9 +111,11 @@ export function ClientOverview({ onNew, onPresets, onSeeAll }: Props) {
         </Card>
 
         <Card className="lg:col-span-2">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Como sua demanda avança</CardTitle>
-          </CardHeader>
+          <details open={data.total <= 3} className="group">
+          <summary className="list-none cursor-pointer select-none p-6 pb-3 flex items-center justify-between [&::-webkit-details-marker]:hidden">
+            <span className="text-base font-semibold">Como sua demanda avança</span>
+            <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-90" />
+          </summary>
           <CardContent>
             <ol className="relative space-y-4 before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-px before:bg-border">
               {FLOW.map((key, i) => {
@@ -142,6 +137,7 @@ export function ClientOverview({ onNew, onPresets, onSeeAll }: Props) {
               Enviar nova demanda <ArrowRight className="h-3.5 w-3.5" />
             </Button>
           </CardContent>
+          </details>
         </Card>
       </div>
     </div>

@@ -97,6 +97,8 @@ interface PortalContextValue {
   submitDispatch: (data: any) => Promise<void>;
   updateSubmission: (id: string, data: any) => Promise<void>;
   loadOverview: () => Promise<void>;
+  /** Recarrega o overview só se a última carga tiver mais de maxAgeMs. */
+  ensureFreshOverview: (maxAgeMs?: number) => Promise<void>;
   uploadFile: (file: File, prefix: string, onProgress?: (pct: number) => void) => Promise<UploadResult>;
   requestChange: (submissionId: string, message: string) => Promise<void>;
   deleteSubmission: (id: string) => Promise<void>;
@@ -142,6 +144,8 @@ export function PortalProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const requestIdRef = useRef(0);
   const loadedOnceRef = useRef(false);
+  const overviewInflightRef = useRef<Promise<void> | null>(null);
+  const overviewLoadedAtRef = useRef(0);
 
   const baseUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/portal-api`;
   const apikey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -234,6 +238,7 @@ export function PortalProvider({ children }: { children: ReactNode }) {
       ]);
       if (reqId !== requestIdRef.current) return;
       loadedOnceRef.current = true;
+      overviewLoadedAtRef.current = Date.now();
       setProfile(profileData);
       if (ov) {
         setOverview(ov);
@@ -254,60 +259,82 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [callApi]);
 
+  // Uma só requisição em voo por vez: realtime, polling, foco da aba e
+  // telas que pedem atualização ao mesmo tempo reaproveitam a mesma chamada.
   const loadOverview = useCallback(async () => {
-    try {
-      const data = await callApi("get-overview");
-      setOverview(data);
-      if (Array.isArray(data?.submissions)) setSubmissions(data.submissions);
-    } catch (e) {
-      console.error(e);
-    }
+    if (overviewInflightRef.current) return overviewInflightRef.current;
+    const p = (async () => {
+      try {
+        const data = await callApi("get-overview");
+        overviewLoadedAtRef.current = Date.now();
+        setOverview(data);
+        if (Array.isArray(data?.submissions)) setSubmissions(data.submissions);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        overviewInflightRef.current = null;
+      }
+    })();
+    overviewInflightRef.current = p;
+    return p;
   }, [callApi]);
+
+  const ensureFreshOverview = useCallback(async (maxAgeMs = 30_000) => {
+    if (Date.now() - overviewLoadedAtRef.current < maxAgeMs) return;
+    await loadOverview();
+  }, [loadOverview]);
 
   useEffect(() => {
     loadProfileAndOverview();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Realtime + polling: reflete qualquer mudança de status feita pelos
-  // administradores no painel de Envios (daily_demands).
+  // Realtime + polling: reflete mudanças de status feitas pela equipe.
+  // O realtime é filtrado pelo responsável do cliente — sem filtro, cada
+  // alteração em QUALQUER demanda do sistema fazia todos os clientes
+  // online recarregarem o overview ao mesmo tempo.
+  const responsibleId = responsible?.id;
   useEffect(() => {
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     const scheduleRefresh = () => {
+      if (document.visibilityState !== "visible") return;
       if (refreshTimer) clearTimeout(refreshTimer);
-      refreshTimer = setTimeout(() => { loadOverview(); }, 400);
+      refreshTimer = setTimeout(() => { loadOverview(); }, 1500);
     };
-    const channel = supabase
-      .channel("portal-daily-demands")
-      .on("postgres_changes", { event: "*", schema: "public", table: "daily_demands" }, scheduleRefresh)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "client_submissions" }, scheduleRefresh)
-      .subscribe();
+    const channel = responsibleId
+      ? supabase
+          .channel(`portal-demands-${responsibleId}`)
+          .on("postgres_changes", { event: "*", schema: "public", table: "daily_demands", filter: `responsible_id=eq.${responsibleId}` }, scheduleRefresh)
+          .on("postgres_changes", { event: "UPDATE", schema: "public", table: "client_submissions", filter: `responsible_id=eq.${responsibleId}` }, scheduleRefresh)
+          .subscribe()
+      : null;
     const pollId = window.setInterval(() => {
       if (document.visibilityState === "visible") loadOverview();
-    }, 180000);
+    }, 300_000);
     let lastHiddenAt = 0;
     const onVisible = () => {
       if (document.visibilityState === "hidden") {
         lastHiddenAt = Date.now();
         return;
       }
-      if (Date.now() - lastHiddenAt > 10000) loadOverview();
+      if (Date.now() - lastHiddenAt > 30_000) ensureFreshOverview(30_000);
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       if (refreshTimer) clearTimeout(refreshTimer);
       window.clearInterval(pollId);
       document.removeEventListener("visibilitychange", onVisible);
-      supabase.removeChannel(channel);
+      if (channel) supabase.removeChannel(channel);
     };
-  }, [loadOverview]);
+  }, [loadOverview, ensureFreshOverview, responsibleId]);
 
   // Carrega o responsável vinculado ao usuário logado.
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { data: userData } = await supabase.auth.getUser();
-      const uid = userData.user?.id;
+      // getSession é local (não vai ao servidor de auth como getUser).
+      const { data: sessData } = await supabase.auth.getSession();
+      const uid = sessData.session?.user?.id;
       if (!uid) return;
       const { data: respId } = await supabase.rpc("responsible_id_for_user", { _uid: uid });
       if (cancelled) return;
@@ -370,10 +397,10 @@ export function PortalProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<PortalContextValue>(() => ({
     token, profile, responsible, submissions, overview, loading, error, switching,
-    updateProfile, submitDispatch, updateSubmission, loadOverview, uploadFile,
+    updateProfile, submitDispatch, updateSubmission, loadOverview, ensureFreshOverview, uploadFile,
     requestChange, deleteSubmission,
     listPresets, savePreset, deletePreset,
-  }), [token, profile, responsible, submissions, overview, loading, error, switching, loadOverview, uploadFile, listPresets, savePreset, deletePreset]);
+  }), [token, profile, responsible, submissions, overview, loading, error, switching, loadOverview, ensureFreshOverview, uploadFile, listPresets, savePreset, deletePreset]);
 
   return <PortalContext.Provider value={value}>{children}</PortalContext.Provider>;
 }

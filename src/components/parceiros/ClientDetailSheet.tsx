@@ -4,7 +4,7 @@ import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
 import {
   AlertTriangle, BarChart3, CheckCheck, CircleDollarSign, ClipboardList, Download, Gauge, KeyRound,
-  Loader2, Search, Send, Trash2, X, XCircle,
+  Loader2, MoreHorizontal, Search, Send, Trash2, X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,15 +12,17 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PeriodFilter, periodLabel, rangeToApi, type DateRange } from "@/components/common/PeriodFilter";
 import { DeliveryBar, EmptyState, RateBadge, SegmentedTabs, StatCard } from "@/components/common/Metrics";
 import { ClientUsersInline } from "@/components/parceiros/ClientUsersInline";
 import type { DetailTab } from "@/components/parceiros/ClientsList";
 import { callPartnerApi } from "@/lib/partnerApi";
+import { cachedFetch, invalidate, peek } from "@/lib/queryCache";
 import { matchManualReport } from "@/lib/dispatchReport";
 import { effectiveStatus, statusMeta, STATUS_ORDER } from "@/lib/demandStatus";
-import { deliveryRate, fmtBRL, fmtInt, fmtPct, fmtUnitPrice, moneyInputValue, parseMoney, rateTone, RATE_TONE_CLASS } from "@/lib/format";
+import { deliveryRate, fmtBRL, fmtInt, fmtPct, moneyInputValue, parseMoney, rateTone, RATE_TONE_CLASS } from "@/lib/format";
 import type { ClientStat, ClientSubmission, ManualReportRow } from "@/lib/partnerTypes";
 import { cn } from "@/lib/utils";
 
@@ -37,11 +39,19 @@ interface Props {
 
 type SortKey = "recent" | "oldest" | "sent";
 
+interface Overview {
+  submissions: ClientSubmission[];
+  reports: ManualReportRow[];
+}
+
 interface Row {
   sub: ClientSubmission;
   status: string;
   totals: { sent: number; delivered: number; failures: number } | null;
 }
+
+const PAGE = 30;
+const EMPTY: Overview = { submissions: [], reports: [] };
 
 function downloadCsv(filename: string, rows: (string | number)[][]) {
   const csv = rows
@@ -60,20 +70,26 @@ function downloadCsv(filename: string, rows: (string | number)[][]) {
   URL.revokeObjectURL(url);
 }
 
+function overviewKey(clientId: string, range: DateRange) {
+  const p = rangeToApi(range);
+  return `partner:overview:${clientId}:${p.from ?? ""}:${p.to ?? ""}`;
+}
+
 export function ClientDetailSheet({ client, initialTab, initialRange, slug, partnerName, onClose, onPriceUpdated, onDeleted }: Props) {
   const [tab, setTab] = useState<DetailTab>(initialTab);
   const [range, setRange] = useState<DateRange>(initialRange);
   const [loading, setLoading] = useState(false);
-  const [submissions, setSubmissions] = useState<ClientSubmission[]>([]);
-  const [reports, setReports] = useState<ManualReportRow[]>([]);
+  const [data, setData] = useState<Overview>(EMPTY);
 
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [sortKey, setSortKey] = useState<SortKey>("recent");
+  const [visibleCount, setVisibleCount] = useState(PAGE);
 
   const [priceDraft, setPriceDraft] = useState("");
   const [savingPrice, setSavingPrice] = useState(false);
 
+  const [menuOpen, setMenuOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [deleting, setDeleting] = useState(false);
@@ -90,20 +106,26 @@ export function ClientDetailSheet({ client, initialTab, initialRange, slug, part
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client?.id]);
 
+  useEffect(() => { setVisibleCount(PAGE); }, [query, statusFilter, sortKey, range.from?.getTime(), range.to?.getTime()]);
+
   useEffect(() => {
     if (!client) return;
     let cancelled = false;
-    setLoading(true);
-    callPartnerApi("get-client-overview", { responsible_id: client.id, ...rangeToApi(range) })
-      .then((j) => {
-        if (cancelled) return;
-        setSubmissions(j.submissions || []);
-        setReports(j.manual_reports || []);
-      })
+    const key = overviewKey(client.id, range);
+    const cached = peek<Overview>(key);
+    setData(cached ?? EMPTY);
+    setLoading(!cached);
+    cachedFetch(key, 60_000, async () => {
+      const j = await callPartnerApi("get-client-overview", { responsible_id: client.id, ...rangeToApi(range) });
+      return { submissions: j.submissions || [], reports: j.manual_reports || [] } as Overview;
+    })
+      .then((ov) => { if (!cancelled) setData(ov); })
       .catch((e: any) => !cancelled && toast.error(e?.message || "Erro ao carregar relatório do cliente"))
       .finally(() => !cancelled && setLoading(false));
     return () => { cancelled = true; };
   }, [client?.id, range.from?.getTime(), range.to?.getTime()]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const { submissions, reports } = data;
 
   const rows: Row[] = useMemo(
     () => submissions.map((sub) => ({ sub, status: effectiveStatus(sub), totals: matchManualReport(sub.demand_id, reports) })),
@@ -135,7 +157,7 @@ export function ClientDetailSheet({ client, initialTab, initialRange, slug, part
     [summary.byStatus],
   );
 
-  const visibleRows = useMemo(() => {
+  const filteredRows = useMemo(() => {
     const q = query.trim().toLowerCase();
     const list = rows.filter((r) => {
       if (statusFilter !== "all" && r.status !== statusFilter) return false;
@@ -176,6 +198,7 @@ export function ClientDetailSheet({ client, initialTab, initialRange, slug, part
     setDeleting(true);
     try {
       await callPartnerApi("delete-client", { responsible_id: client.id });
+      invalidate(`partner:overview:${client.id}:`);
       toast.success("Cliente excluído");
       setDeleteOpen(false);
       setDeleteConfirmText("");
@@ -189,13 +212,14 @@ export function ClientDetailSheet({ client, initialTab, initialRange, slug, part
 
   const exportCsv = () => {
     if (!client) return;
-    const header = ["Ação", "Data", "Status", "Enviadas", "Entregues", "Falhas", "Taxa de entrega (%)", "Valor estimado (R$)"];
-    const body = visibleRows.map((r) => {
+    const header = ["Ação", "Data", "Origem", "Status", "Enviadas", "Entregues", "Falhas", "Taxa de entrega (%)", "Valor estimado (R$)"];
+    const body = filteredRows.map((r) => {
       const t = r.totals;
       const rate = t ? deliveryRate(t.sent, t.delivered) : null;
       return [
         r.sub.action_name || "Demanda sem nome",
         format(new Date(r.sub.created_at), "dd/MM/yyyy"),
+        r.sub.source === "team" ? "Equipe" : "Portal",
         statusMeta(r.status).label,
         t ? t.sent : "",
         t ? t.delivered : "",
@@ -209,6 +233,7 @@ export function ClientDetailSheet({ client, initialTab, initialRange, slug, part
   };
 
   const tone = RATE_TONE_CLASS[rateTone(summary.rate)];
+  const hasFilters = !!query || statusFilter !== "all";
 
   return (
     <>
@@ -217,41 +242,57 @@ export function ClientDetailSheet({ client, initialTab, initialRange, slug, part
           {client && (
             <div className="flex flex-col min-h-full">
               <div className="sticky top-0 z-10 bg-background border-b px-5 sm:px-6 pt-5 pb-4 space-y-4">
-                <SheetHeader className="text-left pr-8">
-                  <SheetTitle className="text-xl">{client.name}</SheetTitle>
-                  <SheetDescription>{client.email || "Sem e-mail cadastrado"}</SheetDescription>
-                </SheetHeader>
-                <SegmentedTabs<DetailTab>
-                  value={tab}
-                  onChange={setTab}
-                  tabs={[
-                    { key: "summary", label: "Resumo", icon: BarChart3 },
-                    { key: "dispatches", label: "Disparos", icon: ClipboardList, count: loading ? undefined : submissions.length },
-                    { key: "access", label: "Acessos", icon: KeyRound },
-                  ]}
-                />
+                <div className="flex items-start gap-2 pr-8">
+                  <SheetHeader className="text-left flex-1 min-w-0 space-y-0.5">
+                    <SheetTitle className="text-xl truncate">{client.name}</SheetTitle>
+                    <SheetDescription className="truncate">{client.email || "Sem e-mail cadastrado"}</SheetDescription>
+                  </SheetHeader>
+                  <Popover open={menuOpen} onOpenChange={setMenuOpen}>
+                    <PopoverTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" aria-label="Mais ações">
+                        <MoreHorizontal />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="w-48 p-1">
+                      <button
+                        type="button"
+                        onClick={() => { setMenuOpen(false); setDeleteOpen(true); }}
+                        className="w-full flex items-center gap-2 rounded-md px-2.5 py-2 text-sm text-destructive hover:bg-destructive/10"
+                      >
+                        <Trash2 className="h-4 w-4" /> Excluir cliente
+                      </button>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <SegmentedTabs<DetailTab>
+                    className="flex-1"
+                    value={tab}
+                    onChange={setTab}
+                    tabs={[
+                      { key: "summary", label: "Resumo", icon: BarChart3 },
+                      { key: "dispatches", label: "Disparos", icon: ClipboardList, count: loading ? undefined : submissions.length },
+                      { key: "access", label: "Acessos", icon: KeyRound },
+                    ]}
+                  />
+                  {tab !== "access" && <PeriodFilter value={range} onChange={setRange} className="h-[42px] sm:w-auto" />}
+                </div>
               </div>
 
               <div className="flex-1 px-5 sm:px-6 py-5 space-y-5">
-                {tab !== "access" && (
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm text-muted-foreground">Período do relatório</p>
-                    <PeriodFilter value={range} onChange={setRange} />
-                  </div>
-                )}
-
                 {tab === "summary" && (
                   <>
                     {loading ? (
                       <div className="grid grid-cols-2 gap-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[104px] rounded-xl" />)}</div>
                     ) : (
                       <div className="grid grid-cols-2 gap-3">
-                        <StatCard icon={Send} label="Enviadas" value={fmtInt(summary.sent)} hint={
-                            summary.unlinkedReports > 0
-                              ? `${summary.withReport} de ${rows.length} demanda(s) com relatório · ${summary.unlinkedReports} lançamento(s) avulso(s)`
-                              : `${summary.withReport} de ${rows.length} demanda(s) com relatório`
-                          } />
-                        <StatCard icon={CheckCheck} label="Entregues" value={fmtInt(summary.delivered)} valueClassName="text-emerald-600" hint={`${fmtInt(summary.failures)} falha(s)`} />
+                        <StatCard
+                          icon={Send}
+                          label="Enviadas"
+                          value={fmtInt(summary.sent)}
+                          hint={summary.unlinkedReports > 0 ? `Inclui ${summary.unlinkedReports} lançamento(s) avulso(s)` : undefined}
+                        />
+                        <StatCard icon={CheckCheck} label="Entregues" value={fmtInt(summary.delivered)} valueClassName="text-emerald-600" />
                         <StatCard icon={Gauge} label="Taxa de entrega" value={fmtPct(summary.rate)} valueClassName={tone.text}>
                           <DeliveryBar sent={summary.sent} delivered={summary.delivered} failures={summary.failures} className="mt-2 h-1.5" />
                         </StatCard>
@@ -259,17 +300,17 @@ export function ClientDetailSheet({ client, initialTab, initialRange, slug, part
                           icon={CircleDollarSign}
                           label="Valor estimado"
                           value={fmtBRL(summary.sent * unitPrice)}
-                          hint={unitPrice ? `${fmtInt(summary.sent)} × ${fmtUnitPrice(unitPrice)}` : <span className="text-amber-600">Defina o custo unitário abaixo</span>}
+                          hint={unitPrice ? undefined : <span className="text-amber-600">Defina o custo unitário abaixo</span>}
                         />
                       </div>
                     )}
 
-                    <section className="rounded-xl border p-4 space-y-3">
+                    <section className="space-y-2">
                       <h3 className="text-sm font-semibold">Demandas por status</h3>
                       {loading ? (
                         <Skeleton className="h-8" />
                       ) : rows.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">Nenhuma demanda enviada em {periodLabel(range).toLowerCase()}.</p>
+                        <p className="text-sm text-muted-foreground">Nenhuma demanda em {periodLabel(range).toLowerCase()}.</p>
                       ) : (
                         <div className="flex flex-wrap gap-2">
                           {statusesPresent.map((s) => {
@@ -278,7 +319,7 @@ export function ClientDetailSheet({ client, initialTab, initialRange, slug, part
                               <button
                                 key={s}
                                 type="button"
-                                title={m.description}
+                                title={`${m.description} Clique para ver.`}
                                 onClick={() => { setStatusFilter(s); setTab("dispatches"); }}
                                 className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium hover:opacity-80", m.cls)}
                               >
@@ -291,36 +332,23 @@ export function ClientDetailSheet({ client, initialTab, initialRange, slug, part
                       )}
                     </section>
 
-                    <section className="rounded-xl border p-4 space-y-3">
+                    <section className="space-y-2 pt-1">
                       <div>
                         <h3 className="text-sm font-semibold">Custo unitário do disparo</h3>
-                        <p className="text-xs text-muted-foreground">Usado no valor estimado. Só você vê, o cliente não.</p>
+                        <p className="text-xs text-muted-foreground">Usado no valor estimado. O cliente não vê.</p>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 max-w-sm">
                         <div className="relative flex-1">
                           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">R$</span>
                           <Input inputMode="decimal" value={priceDraft} onChange={(e) => setPriceDraft(e.target.value)} placeholder="0,00" className="pl-9" />
                         </div>
-                        <Button onClick={savePrice} disabled={savingPrice || parseMoney(priceDraft) === unitPrice}>
-                          {savingPrice && <Loader2 className="animate-spin" />}
-                          Salvar
-                        </Button>
+                        {parseMoney(priceDraft) !== unitPrice && (
+                          <Button onClick={savePrice} disabled={savingPrice}>
+                            {savingPrice && <Loader2 className="animate-spin" />}
+                            Salvar
+                          </Button>
+                        )}
                       </div>
-                    </section>
-
-                    <section className="rounded-xl border border-destructive/30 p-4 space-y-3">
-                      <div>
-                        <h3 className="text-sm font-semibold text-destructive">Excluir cliente</h3>
-                        <p className="text-xs text-muted-foreground">Remove o cadastro, os acessos e as solicitações deste cliente.</p>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
-                        onClick={() => setDeleteOpen(true)}
-                      >
-                        <Trash2 /> Excluir cliente
-                      </Button>
                     </section>
                   </>
                 )}
@@ -349,23 +377,23 @@ export function ClientDetailSheet({ client, initialTab, initialRange, slug, part
                       </Select>
                     </div>
 
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs text-muted-foreground">
-                        {loading ? "Carregando…" : `${visibleRows.length} de ${rows.length} demanda(s)`}
-                        {(query || statusFilter !== "all") && (
+                    <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                      <span>
+                        {loading ? "Carregando…" : hasFilters ? `${filteredRows.length} de ${rows.length}` : `${rows.length} demanda(s)`}
+                        {hasFilters && (
                           <button type="button" className="ml-2 text-primary hover:underline" onClick={() => { setQuery(""); setStatusFilter("all"); }}>
-                            limpar filtros
+                            limpar
                           </button>
                         )}
-                      </p>
-                      <Button variant="outline" size="sm" onClick={exportCsv} disabled={loading || visibleRows.length === 0}>
-                        <Download /> Exportar CSV
+                      </span>
+                      <Button variant="ghost" size="sm" onClick={exportCsv} disabled={loading || filteredRows.length === 0} className="text-muted-foreground">
+                        <Download /> CSV
                       </Button>
                     </div>
 
                     {loading ? (
-                      <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)}</div>
-                    ) : visibleRows.length === 0 ? (
+                      <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-xl" />)}</div>
+                    ) : filteredRows.length === 0 ? (
                       <div className="rounded-xl border border-dashed">
                         <EmptyState
                           icon={ClipboardList}
@@ -374,60 +402,52 @@ export function ClientDetailSheet({ client, initialTab, initialRange, slug, part
                         />
                       </div>
                     ) : (
-                      <div className="space-y-2">
-                        {visibleRows.map(({ sub, status, totals }) => {
+                      <div className="rounded-xl border divide-y overflow-hidden">
+                        {filteredRows.slice(0, visibleCount).map(({ sub, status, totals }) => {
                           const m = statusMeta(status);
+                          const awaitingReport = !totals && status === "disparado";
                           return (
-                            <div key={sub.id} className="rounded-xl border bg-card p-4 space-y-3">
-                              <div className="flex items-start justify-between gap-3">
+                            <div key={sub.id} className="p-3.5 sm:px-4 space-y-2 bg-card">
+                              <div className="flex items-center justify-between gap-3">
                                 <div className="min-w-0">
-                                  <p className="font-medium truncate">{sub.action_name || "Demanda sem nome"}</p>
-                                  <p className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1">
-                                    <span>
-                                      {sub.source === "team" ? "Disparo em " : "Enviada em "}
-                                      {format(new Date(sub.created_at), "dd 'de' MMM 'de' yyyy", { locale: ptBR })}
-                                    </span>
-                                    <span
-                                      className={cn(
-                                        "inline-flex items-center rounded-md px-1.5 py-px text-[10px] font-medium",
-                                        sub.source === "team" ? "bg-sky-500/10 text-sky-700" : "bg-muted text-muted-foreground",
-                                      )}
-                                      title={sub.source === "team" ? "Demanda cadastrada pela equipe no painel interno" : "Enviada pelo cliente no portal"}
-                                    >
-                                      {sub.source === "team" ? "Criada pela equipe" : "Pelo portal"}
-                                    </span>
+                                  <p className="font-medium text-sm truncate">{sub.action_name || "Demanda sem nome"}</p>
+                                  <p className="text-xs text-muted-foreground truncate">
+                                    {format(new Date(sub.created_at), "dd/MM/yyyy", { locale: ptBR })}
+                                    {sub.source === "team" && <span className="text-sky-700"> · Criada pela equipe</span>}
+                                    {awaitingReport && <span> · aguardando relatório</span>}
                                   </p>
                                 </div>
                                 <span title={m.description} className={cn("shrink-0 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium", m.cls)}>
                                   {m.label}
                                 </span>
                               </div>
-                              {totals ? (
-                                <>
-                                  <DeliveryBar sent={totals.sent} delivered={totals.delivered} failures={totals.failures} />
-                                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-x-3 gap-y-2 text-xs">
-                                    <div><div className="text-muted-foreground">Enviadas</div><div className="font-semibold tabular-nums text-sm">{fmtInt(totals.sent)}</div></div>
-                                    <div><div className="text-muted-foreground flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />Entregues</div><div className="font-semibold tabular-nums text-sm">{fmtInt(totals.delivered)}</div></div>
-                                    <div><div className="text-muted-foreground flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-red-400" />Falhas</div><div className="font-semibold tabular-nums text-sm">{fmtInt(totals.failures)}</div></div>
-                                    <div><div className="text-muted-foreground">Taxa</div><RateBadge sent={totals.sent} delivered={totals.delivered} className="mt-0.5" /></div>
-                                    <div><div className="text-muted-foreground">Valor est.</div><div className="font-semibold tabular-nums text-sm">{fmtBRL(totals.sent * unitPrice)}</div></div>
-                                  </div>
-                                </>
-                              ) : (
-                                <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-                                  {m.group === "cancelled" ? <XCircle className="h-3.5 w-3.5" /> : <ClipboardList className="h-3.5 w-3.5" />}
-                                  {m.group === "cancelled" ? `${m.label}, sem relatório.` : "Relatório ainda não lançado pela equipe."}
-                                </p>
+                              {totals && (
+                                <div className="flex items-center gap-3">
+                                  <DeliveryBar sent={totals.sent} delivered={totals.delivered} failures={totals.failures} className="h-1.5 flex-1" />
+                                  <span className="text-xs tabular-nums text-muted-foreground whitespace-nowrap">
+                                    {fmtInt(totals.delivered)}/{fmtInt(totals.sent)}
+                                  </span>
+                                  <RateBadge sent={totals.sent} delivered={totals.delivered} />
+                                  {unitPrice > 0 && (
+                                    <span className="hidden sm:inline text-xs tabular-nums font-medium w-20 text-right">{fmtBRL(totals.sent * unitPrice)}</span>
+                                  )}
+                                </div>
                               )}
                             </div>
                           );
                         })}
-                        {submissions.length >= 200 && (
-                          <p className="text-xs text-muted-foreground italic text-center pt-1">
-                            Mostrando as 200 mais recentes do período. Reduza o período para ver as demais.
-                          </p>
-                        )}
                       </div>
+                    )}
+
+                    {!loading && filteredRows.length > visibleCount && (
+                      <Button variant="outline" className="w-full" onClick={() => setVisibleCount((n) => n + PAGE)}>
+                        Mostrar mais ({filteredRows.length - visibleCount} restantes)
+                      </Button>
+                    )}
+                    {!loading && submissions.length >= 200 && (
+                      <p className="text-xs text-muted-foreground text-center">
+                        Mostrando as mais recentes do período. Reduza o período para ver as anteriores.
+                      </p>
                     )}
                   </>
                 )}

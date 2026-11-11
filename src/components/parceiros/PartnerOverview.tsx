@@ -19,11 +19,14 @@ interface Props {
   onGoToClients: () => void;
 }
 
-interface Alert {
-  client: ClientStat;
-  text: string;
-  tone: "warn" | "bad" | "info";
+interface AlertGroup {
+  key: string;
+  label: string;
+  tone: "bad" | "warn";
+  clients: { client: ClientStat; detail?: string }[];
 }
+
+const MAX_CHIPS = 6;
 
 export function PartnerOverview({ clients, loading, range, onRangeChange, onOpenClient, onCreate, onGoToClients }: Props) {
   const stats = useMemo(() => {
@@ -44,16 +47,18 @@ export function PartnerOverview({ clients, loading, range, onRangeChange, onOpen
   );
   const maxSent = ranking[0]?.sent || 0;
 
-  const alerts = useMemo(() => {
-    const list: Alert[] = [];
+  // Só alertas acionáveis, agrupados por tipo. "Sem envios no período"
+  // não é problema por si só e poluía a lista com todos os clientes.
+  const alertGroups = useMemo(() => {
+    const low: AlertGroup = { key: "low", label: "Taxa de entrega abaixo de 80%", tone: "bad", clients: [] };
+    const noPrice: AlertGroup = { key: "price", label: "Custo unitário não definido", tone: "warn", clients: [] };
     for (const c of clients) {
       const rate = deliveryRate(c.sent, c.delivered);
-      if (rate !== null && rateTone(rate) === "bad") list.push({ client: c, text: `Taxa de entrega baixa (${fmtPct(rate)})`, tone: "bad" });
-      if (!c.unit_price) list.push({ client: c, text: "Custo unitário não definido", tone: "warn" });
-      if (c.sent === 0) list.push({ client: c, text: "Sem envios no período", tone: "info" });
+      if (rate !== null && rateTone(rate) === "bad") low.clients.push({ client: c, detail: fmtPct(rate) });
+      if (!c.unit_price) noPrice.clients.push({ client: c });
     }
-    const order = { bad: 0, warn: 1, info: 2 };
-    return list.sort((a, b) => order[a.tone] - order[b.tone]);
+    low.clients.sort((x, y) => (deliveryRate(x.client.sent, x.client.delivered) ?? 0) - (deliveryRate(y.client.sent, y.client.delivered) ?? 0));
+    return [low, noPrice].filter((g) => g.clients.length > 0);
   }, [clients]);
 
   const tone = RATE_TONE_CLASS[rateTone(stats.rate)];
@@ -88,8 +93,8 @@ export function PartnerOverview({ clients, loading, range, onRangeChange, onOpen
         ) : (
           <>
             <StatCard icon={Users} label="Clientes" value={fmtInt(clients.length)} hint={`${fmtInt(stats.active)} com envios no período`} />
-            <StatCard icon={Send} label="Mensagens enviadas" value={fmtInt(stats.sent)} hint="Total registrado nos relatórios" />
-            <StatCard icon={CheckCheck} label="Entregues" value={fmtInt(stats.delivered)} valueClassName="text-emerald-600" hint={`${fmtInt(Math.max(stats.sent - stats.delivered, 0))} não entregues`} />
+            <StatCard icon={Send} label="Enviadas" value={fmtInt(stats.sent)} />
+            <StatCard icon={CheckCheck} label="Entregues" value={fmtInt(stats.delivered)} valueClassName="text-emerald-600" />
             <StatCard icon={Gauge} label="Taxa de entrega" value={fmtPct(stats.rate)} valueClassName={tone.text}>
               <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden">
                 <div className={cn("h-full rounded-full", tone.bg)} style={{ width: `${Math.min(stats.rate ?? 0, 100)}%` }} />
@@ -97,15 +102,13 @@ export function PartnerOverview({ clients, loading, range, onRangeChange, onOpen
             </StatCard>
             <StatCard
               icon={CircleDollarSign}
-              label="Faturamento estimado"
+              label="Faturamento est."
               value={fmtBRL(stats.revenue)}
               className="col-span-2 lg:col-span-1"
               hint={
                 stats.unpricedWithSends > 0 ? (
-                  <span className="text-amber-600">{stats.unpricedWithSends} cliente(s) com envios sem custo definido</span>
-                ) : (
-                  "Enviadas × custo unitário · só você vê"
-                )
+                  <span className="text-amber-600">{stats.unpricedWithSends} cliente(s) com envios sem custo</span>
+                ) : undefined
               }
             />
           </>
@@ -165,35 +168,41 @@ export function PartnerOverview({ clients, loading, range, onRangeChange, onOpen
           <CardContent>
             {loading ? (
               <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10" />)}</div>
-            ) : alerts.length === 0 ? (
+            ) : alertGroups.length === 0 ? (
               <div className="flex flex-col items-center text-center py-6 text-sm text-muted-foreground">
                 <CheckCircle2 className="h-8 w-8 text-emerald-500 mb-2" />
                 Tudo certo por aqui.
               </div>
             ) : (
-              <ul className="space-y-1 max-h-[300px] overflow-y-auto -mx-2">
-                {alerts.slice(0, 20).map((a, i) => (
-                  <li key={`${a.client.id}-${i}`}>
-                    <button
-                      type="button"
-                      onClick={() => onOpenClient(a.client)}
-                      className="w-full flex items-center gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-muted/60 transition-colors"
-                    >
-                      <span
-                        className={cn(
-                          "h-2 w-2 rounded-full shrink-0",
-                          a.tone === "bad" ? "bg-red-500" : a.tone === "warn" ? "bg-amber-500" : "bg-muted-foreground/40",
-                        )}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-medium truncate">{a.client.name}</div>
-                        <div className="text-xs text-muted-foreground">{a.text}</div>
-                      </div>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-                    </button>
-                  </li>
+              <div className="space-y-4">
+                {alertGroups.map((g) => (
+                  <div key={g.key} className="space-y-2">
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className={cn("h-2 w-2 rounded-full shrink-0", g.tone === "bad" ? "bg-red-500" : "bg-amber-500")} />
+                      <span className="font-medium flex-1">{g.label}</span>
+                      <span className="text-xs text-muted-foreground tabular-nums">{g.clients.length}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 pl-4">
+                      {g.clients.slice(0, MAX_CHIPS).map(({ client, detail }) => (
+                        <button
+                          key={client.id}
+                          type="button"
+                          onClick={() => onOpenClient(client)}
+                          className="inline-flex items-center gap-1 rounded-md border bg-card px-2 py-1 text-xs hover:bg-muted transition-colors max-w-[180px]"
+                        >
+                          <span className="truncate">{client.name}</span>
+                          {detail && <span className="text-red-600 tabular-nums shrink-0">{detail}</span>}
+                        </button>
+                      ))}
+                      {g.clients.length > MAX_CHIPS && (
+                        <button type="button" onClick={onGoToClients} className="text-xs text-primary hover:underline px-1">
+                          +{g.clients.length - MAX_CHIPS} ver todos
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 ))}
-              </ul>
+              </div>
             )}
           </CardContent>
         </Card>

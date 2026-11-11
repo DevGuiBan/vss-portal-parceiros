@@ -57,14 +57,13 @@ import {
 import { cn } from "@/lib/utils";
 import { normalizeSearch } from "@/lib/normalizeSearch";
 import { PortalReportDialog } from "@/components/portal/PortalReportDialog";
-import { DeliveryBar, RateBadge } from "@/components/common/Metrics";
 import { effectiveStatus, statusMeta, STATUS_ORDER } from "@/lib/demandStatus";
 import { matchManualReport } from "@/lib/dispatchReport";
-import { fmtInt } from "@/lib/format";
+import { deliveryRate, fmtInt, fmtPct, rateTone, RATE_TONE_CLASS } from "@/lib/format";
 
 
 export function PortalSubmissionsList({ token }: { token: string | null }) {
-  const { overview, loadOverview, requestChange, uploadFile, deleteSubmission } = usePortal(token);
+  const { overview, ensureFreshOverview, requestChange, uploadFile, deleteSubmission } = usePortal(token);
   const submissions = overview?.submissions || [];
 
   const [search, setSearch] = useState("");
@@ -155,7 +154,8 @@ export function PortalSubmissionsList({ token }: { token: string | null }) {
     });
   }, [submissions, search, statusFilter]);
 
-  useEffect(() => { loadOverview(); }, [loadOverview]);
+  // O provider já carrega o overview; aqui só revalida se estiver velho.
+  useEffect(() => { ensureFreshOverview(30_000); }, [ensureFreshOverview]);
   useEffect(() => { setPage(1); }, [search, statusFilter]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -291,11 +291,9 @@ export function PortalSubmissionsList({ token }: { token: string | null }) {
                           {new Date(s.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}
                         </p>
                         {totals && (
-                          <div className="flex items-center gap-2 mt-1.5 max-w-xs">
-                            <DeliveryBar sent={totals.sent} delivered={totals.delivered} failures={totals.failures} className="h-1.5 flex-1" />
-                            <span className="text-[11px] text-muted-foreground tabular-nums whitespace-nowrap">{fmtInt(totals.delivered)}/{fmtInt(totals.sent)}</span>
-                            <RateBadge sent={totals.sent} delivered={totals.delivered} className="px-1.5 py-0 text-[10px]" />
-                          </div>
+                          <p className="text-xs text-muted-foreground tabular-nums">
+                            {fmtInt(totals.sent)} enviadas · <span className={RATE_TONE_CLASS[rateTone(deliveryRate(totals.sent, totals.delivered))].text}>{fmtPct(deliveryRate(totals.sent, totals.delivered))} entregue</span>
+                          </p>
                         )}
                       </div>
                       {hasPendingChange && (

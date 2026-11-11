@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronRight, KeyRound, Plus, Search, Users, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -15,6 +15,8 @@ import { cn } from "@/lib/utils";
 export type DetailTab = "summary" | "dispatches" | "access";
 
 type SortKey = "name" | "sent" | "delivered" | "rate" | "revenue";
+
+const PAGE = 50;
 
 const SORT_LABEL: Record<SortKey, string> = {
   name: "Nome",
@@ -47,6 +49,9 @@ export function ClientsList({ clients, loading, range, onRangeChange, onOpenClie
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("sent");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [visibleCount, setVisibleCount] = useState(PAGE);
+
+  useEffect(() => { setVisibleCount(PAGE); }, [query, sortKey, sortDir]);
 
   const rows = useMemo(() => {
     const q = normalizeSearch(query).trim();
@@ -65,6 +70,8 @@ export function ClientsList({ clients, loading, range, onRangeChange, onOpenClie
     () => rows.reduce((a, c) => ({ sent: a.sent + c.sent, revenue: a.revenue + estimatedRevenue(c) }), { sent: 0, revenue: 0 }),
     [rows],
   );
+
+  const visibleRows = rows.slice(0, visibleCount);
 
   const toggleSort = (k: SortKey) => {
     if (k === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -89,7 +96,7 @@ export function ClientsList({ clients, loading, range, onRangeChange, onOpenClie
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Clientes</h1>
-          <p className="text-sm text-muted-foreground">Clique em um cliente para ver o relatório completo e gerenciar os acessos.</p>
+          <p className="text-sm text-muted-foreground">Clique em um cliente para ver o relatório e os acessos.</p>
         </div>
         <Button onClick={onCreate} className="w-full sm:w-auto"><Plus /> Novo cliente</Button>
       </div>
@@ -153,7 +160,7 @@ export function ClientsList({ clients, loading, range, onRangeChange, onOpenClie
                 </tr>
               </thead>
               <tbody>
-                {rows.map((c) => (
+                {visibleRows.map((c) => (
                   <tr key={c.id} className="border-b last:border-0 cursor-pointer hover:bg-muted/40 group" onClick={() => onOpenClient(c)}>
                     <td className="py-3 px-4">
                       <div className="font-medium">{c.name}</div>
@@ -189,7 +196,7 @@ export function ClientsList({ clients, loading, range, onRangeChange, onOpenClie
 
           {/* Mobile */}
           <div className="md:hidden space-y-2">
-            {rows.map((c) => (
+            {visibleRows.map((c) => (
               <button key={c.id} type="button" onClick={() => onOpenClient(c)} className="w-full text-left">
                 <Card className="p-4 active:bg-muted/40 transition-colors">
                   <div className="flex items-start justify-between gap-2">
@@ -217,6 +224,12 @@ export function ClientsList({ clients, loading, range, onRangeChange, onOpenClie
               </button>
             ))}
           </div>
+
+          {rows.length > visibleCount && (
+            <Button variant="outline" className="w-full" onClick={() => setVisibleCount((n) => n + PAGE)}>
+              Mostrar mais ({rows.length - visibleCount} restantes)
+            </Button>
+          )}
         </>
       )}
     </div>

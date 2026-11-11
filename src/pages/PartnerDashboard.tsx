@@ -14,6 +14,7 @@ import { ClientDetailSheet } from "@/components/parceiros/ClientDetailSheet";
 import { CreateClientDialog } from "@/components/parceiros/CreateClientDialog";
 import type { ClientStat } from "@/lib/partnerTypes";
 import { cn } from "@/lib/utils";
+import { cachedFetch, invalidate, peek } from "@/lib/queryCache";
 
 type NavKey = "dashboard" | "clients";
 const NAV: { key: NavKey; label: string; icon: typeof Users }[] = [
@@ -36,11 +37,20 @@ export default function PartnerDashboard() {
 
   const partnerName = branding?.display_name || "Portal do Parceiro";
 
-  const load = async (silent = false) => {
-    if (!silent) setLoading(true);
+  // Cache por período: trocar de período e voltar é instantâneo; dados
+  // anteriores ficam na tela enquanto revalida (sem skeleton piscando).
+  const load = async (opts: { force?: boolean } = {}) => {
+    const params = rangeToApi(range);
+    const key = `partner:clients:${params.from ?? ""}:${params.to ?? ""}`;
+    const cached = peek<ClientStat[]>(key);
+    if (cached) setClients(cached);
+    else setLoading(true);
     try {
-      const j = await callPartnerApi("list-clients-with-stats", rangeToApi(range));
-      setClients(j.clients || []);
+      const list = await cachedFetch(key, 60_000, async () => {
+        const j = await callPartnerApi("list-clients-with-stats", params);
+        return (j.clients || []) as ClientStat[];
+      }, opts);
+      setClients(list);
     } catch (e: any) {
       if (String(e?.message || "").toLowerCase().includes("parceiro")) setForbidden(true);
       else toast.error(e?.message || "Erro ao carregar clientes");
@@ -149,7 +159,7 @@ export default function PartnerDashboard() {
         onOpenChange={setCreateOpen}
         slug={slug}
         partnerName={partnerName}
-        onCreated={() => load(true)}
+        onCreated={() => { invalidate("partner:clients:"); load({ force: true }); }}
       />
 
       <ClientDetailSheet
@@ -160,10 +170,12 @@ export default function PartnerDashboard() {
         partnerName={partnerName}
         onClose={() => setSelected(null)}
         onPriceUpdated={(id, price) => {
+          invalidate("partner:clients:");
           setClients((prev) => prev.map((c) => (c.id === id ? { ...c, unit_price: price } : c)));
           setSelected((s) => (s && s.id === id ? { ...s, unit_price: price } : s));
         }}
         onDeleted={(id) => {
+          invalidate("partner:");
           setClients((prev) => prev.filter((c) => c.id !== id));
           setSelected(null);
         }}
