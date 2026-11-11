@@ -94,9 +94,6 @@ export default function PartnerDashboard() {
 
           <div className="flex items-center gap-2 shrink-0">
             <span className="hidden lg:block text-xs text-muted-foreground max-w-[180px] truncate">{user?.email}</span>
-            <Button size="sm" onClick={() => setCreateOpen(true)} className="hidden sm:inline-flex">
-              <Plus /> Novo cliente
-            </Button>
             <Button variant="ghost" size="sm" onClick={signOut} title="Sair">
               <LogOut /> <span className="hidden sm:inline">Sair</span>
             </Button>

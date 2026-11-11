@@ -56,6 +56,12 @@ export const DEMAND_STATUS_META: Record<string, StatusMeta> = {
     description: "O disparo foi reagendado para outra data.",
     group: "progress",
   },
+  excluida: {
+    label: "Excluída pela equipe",
+    cls: "bg-destructive/10 text-destructive border-destructive/30",
+    description: "A solicitação foi removida pela equipe antes do disparo.",
+    group: "cancelled",
+  },
   cancelado: {
     label: "Cancelado",
     cls: "bg-destructive/15 text-destructive border-destructive/30",
@@ -65,7 +71,7 @@ export const DEMAND_STATUS_META: Record<string, StatusMeta> = {
 };
 
 /** Ordem dos status no fluxo, usada em legendas e filtros. */
-export const STATUS_ORDER = ["pending", "pendente", "conexao_numero", "aprovacao_template", "producao", "pronto", "remarcado", "disparado", "cancelado"];
+export const STATUS_ORDER = ["pending", "pendente", "conexao_numero", "aprovacao_template", "producao", "pronto", "remarcado", "disparado", "cancelado", "excluida"];
 
 const FALLBACK: StatusMeta = {
   label: "Processado",
@@ -75,7 +81,8 @@ const FALLBACK: StatusMeta = {
 };
 
 /** Status efetivo: o da demanda (quando já vinculada) ou o da solicitação. */
-export function effectiveStatus(s: { demand_status?: string | null; status?: string | null }) {
+export function effectiveStatus(s: { demand_status?: string | null; status?: string | null; admin_deleted_at?: string | null }) {
+  if (s.admin_deleted_at) return "excluida";
   return s.demand_status || (s.status === "pending" ? "pending" : s.status || "pending");
 }
 

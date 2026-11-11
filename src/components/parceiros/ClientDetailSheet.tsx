@@ -111,19 +111,24 @@ export function ClientDetailSheet({ client, initialTab, initialRange, slug, part
   );
 
   const summary = useMemo(() => {
-    let sent = 0, delivered = 0, failures = 0, withReport = 0;
+    // Totais = todos os relatórios do período (a API já filtra por data),
+    // para bater com os números da lista/dashboard. Relatórios sem demanda
+    // listada (lançamentos avulsos) entram no total e são sinalizados.
+    let sent = 0, delivered = 0, failures = 0, withReport = 0, unlinkedReports = 0;
+    const listedDemandIds = new Set(rows.map((r) => r.sub.demand_id).filter(Boolean));
+    for (const rep of reports) {
+      sent += Number(rep.sent) || 0;
+      delivered += Number(rep.delivered) || 0;
+      failures += Number(rep.failures) || 0;
+      if (!rep.demand_id || !listedDemandIds.has(rep.demand_id)) unlinkedReports++;
+    }
     const byStatus: Record<string, number> = {};
     for (const r of rows) {
       byStatus[r.status] = (byStatus[r.status] || 0) + 1;
-      if (r.totals) {
-        withReport++;
-        sent += r.totals.sent;
-        delivered += r.totals.delivered;
-        failures += r.totals.failures;
-      }
+      if (r.totals) withReport++;
     }
-    return { sent, delivered, failures, withReport, byStatus, rate: deliveryRate(sent, delivered) };
-  }, [rows]);
+    return { sent, delivered, failures, withReport, unlinkedReports, byStatus, rate: deliveryRate(sent, delivered) };
+  }, [rows, reports]);
 
   const statusesPresent = useMemo(
     () => STATUS_ORDER.filter((s) => summary.byStatus[s]).concat(Object.keys(summary.byStatus).filter((s) => !STATUS_ORDER.includes(s))),
@@ -241,7 +246,11 @@ export function ClientDetailSheet({ client, initialTab, initialRange, slug, part
                       <div className="grid grid-cols-2 gap-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[104px] rounded-xl" />)}</div>
                     ) : (
                       <div className="grid grid-cols-2 gap-3">
-                        <StatCard icon={Send} label="Enviadas" value={fmtInt(summary.sent)} hint={`${summary.withReport} de ${rows.length} demanda(s) com relatório`} />
+                        <StatCard icon={Send} label="Enviadas" value={fmtInt(summary.sent)} hint={
+                            summary.unlinkedReports > 0
+                              ? `${summary.withReport} de ${rows.length} demanda(s) com relatório · ${summary.unlinkedReports} lançamento(s) avulso(s)`
+                              : `${summary.withReport} de ${rows.length} demanda(s) com relatório`
+                          } />
                         <StatCard icon={CheckCheck} label="Entregues" value={fmtInt(summary.delivered)} valueClassName="text-emerald-600" hint={`${fmtInt(summary.failures)} falha(s)`} />
                         <StatCard icon={Gauge} label="Taxa de entrega" value={fmtPct(summary.rate)} valueClassName={tone.text}>
                           <DeliveryBar sent={summary.sent} delivered={summary.delivered} failures={summary.failures} className="mt-2 h-1.5" />
@@ -373,8 +382,20 @@ export function ClientDetailSheet({ client, initialTab, initialRange, slug, part
                               <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
                                   <p className="font-medium truncate">{sub.action_name || "Demanda sem nome"}</p>
-                                  <p className="text-xs text-muted-foreground">
-                                    Enviada em {format(new Date(sub.created_at), "dd 'de' MMM 'de' yyyy", { locale: ptBR })}
+                                  <p className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1">
+                                    <span>
+                                      {sub.source === "team" ? "Disparo em " : "Enviada em "}
+                                      {format(new Date(sub.created_at), "dd 'de' MMM 'de' yyyy", { locale: ptBR })}
+                                    </span>
+                                    <span
+                                      className={cn(
+                                        "inline-flex items-center rounded-md px-1.5 py-px text-[10px] font-medium",
+                                        sub.source === "team" ? "bg-sky-500/10 text-sky-700" : "bg-muted text-muted-foreground",
+                                      )}
+                                      title={sub.source === "team" ? "Demanda cadastrada pela equipe no painel interno" : "Enviada pelo cliente no portal"}
+                                    >
+                                      {sub.source === "team" ? "Criada pela equipe" : "Pelo portal"}
+                                    </span>
                                   </p>
                                 </div>
                                 <span title={m.description} className={cn("shrink-0 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium", m.cls)}>
@@ -394,8 +415,8 @@ export function ClientDetailSheet({ client, initialTab, initialRange, slug, part
                                 </>
                               ) : (
                                 <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-                                  {status === "cancelado" ? <XCircle className="h-3.5 w-3.5" /> : <ClipboardList className="h-3.5 w-3.5" />}
-                                  {status === "cancelado" ? "Demanda cancelada, sem relatório." : "Relatório ainda não lançado pela equipe."}
+                                  {m.group === "cancelled" ? <XCircle className="h-3.5 w-3.5" /> : <ClipboardList className="h-3.5 w-3.5" />}
+                                  {m.group === "cancelled" ? `${m.label}, sem relatório.` : "Relatório ainda não lançado pela equipe."}
                                 </p>
                               )}
                             </div>

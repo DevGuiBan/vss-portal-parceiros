@@ -14,6 +14,9 @@ export interface ClientSubmission {
   demand_id?: string | null;
   demand_status?: string | null;
   status?: string | null;
+  /** portal = enviada pelo cliente; team = criada pela equipe no app principal. */
+  source?: "portal" | "team";
+  admin_deleted_at?: string | null;
 }
 
 export interface ManualReportRow {
