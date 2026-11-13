@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { AlertTriangle, CheckCircle2, ChevronRight, CircleDollarSign, Gauge, Plus, Send, Trophy, Users, CheckCheck } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronRight, CircleDollarSign, Gauge, Plus, Send, Trophy, Users, CheckCheck, CalendarCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,6 +17,8 @@ interface Props {
   onOpenClient: (c: ClientStat) => void;
   onCreate: () => void;
   onGoToClients: () => void;
+  today?: { total: number; done: number; late: number } | null;
+  onGoToToday?: () => void;
 }
 
 interface AlertGroup {
@@ -28,7 +30,7 @@ interface AlertGroup {
 
 const MAX_CHIPS = 6;
 
-export function PartnerOverview({ clients, loading, range, onRangeChange, onOpenClient, onCreate, onGoToClients }: Props) {
+export function PartnerOverview({ clients, loading, range, onRangeChange, onOpenClient, onCreate, onGoToClients, today, onGoToToday }: Props) {
   const stats = useMemo(() => {
     let sent = 0, delivered = 0, revenue = 0, active = 0, unpricedWithSends = 0;
     for (const c of clients) {
@@ -86,6 +88,32 @@ export function PartnerOverview({ clients, loading, range, onRangeChange, onOpen
         </div>
         <PeriodFilter value={range} onChange={onRangeChange} className="w-full sm:w-auto" />
       </div>
+
+      {today && onGoToToday && (
+        <button
+          type="button"
+          onClick={onGoToToday}
+          className="w-full flex items-center gap-3 rounded-xl border bg-card px-4 py-3 text-left hover:border-primary/40 transition-colors"
+        >
+          <div className="h-8 w-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+            <CalendarCheck className="h-4 w-4" />
+          </div>
+          <div className="flex-1 min-w-0 text-sm">
+            <span className="font-semibold">Hoje</span>
+            <span className="text-muted-foreground">
+              {" · "}
+              {today.total === 0
+                ? "nenhuma demanda"
+                : <>{fmtInt(today.total)} {today.total === 1 ? "demanda" : "demandas"} · {fmtInt(today.done)} {today.done === 1 ? "disparada" : "disparadas"}</>}
+            </span>
+            {today.late > 0 && (
+              <span className="text-destructive font-medium"> · {today.late} {today.late === 1 ? "atrasada" : "atrasadas"}</span>
+            )}
+          </div>
+          <span className="hidden sm:inline text-xs text-muted-foreground">Ver demandas do dia</span>
+          <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+        </button>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         {loading ? (

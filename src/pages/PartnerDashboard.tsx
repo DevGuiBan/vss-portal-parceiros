@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useParams, Navigate } from "react-router-dom";
 import { toast } from "sonner";
-import { LayoutDashboard, LogOut, Plus, Users } from "lucide-react";
+import { CalendarCheck, LayoutDashboard, LogOut, Plus, Users } from "lucide-react";
+import { parseISO } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { usePartnerBranding } from "@/hooks/usePartnerBranding";
@@ -15,11 +16,14 @@ import { CreateClientDialog } from "@/components/parceiros/CreateClientDialog";
 import type { ClientStat } from "@/lib/partnerTypes";
 import { cn } from "@/lib/utils";
 import { cachedFetch, invalidate, peek } from "@/lib/queryCache";
+import { DayDemands } from "@/components/parceiros/DayDemands";
+import { todayBR, useDayDemands, dayGroup, isLate } from "@/lib/dayDemands";
 
-type NavKey = "dashboard" | "clients";
-const NAV: { key: NavKey; label: string; icon: typeof Users }[] = [
-  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { key: "clients", label: "Clientes", icon: Users },
+type NavKey = "dashboard" | "day" | "clients";
+const NAV: { key: NavKey; label: string; short: string; icon: typeof Users }[] = [
+  { key: "dashboard", label: "Dashboard", short: "Dashboard", icon: LayoutDashboard },
+  { key: "day", label: "Demandas do Dia", short: "Do dia", icon: CalendarCheck },
+  { key: "clients", label: "Clientes", short: "Clientes", icon: Users },
 ];
 
 export default function PartnerDashboard() {
@@ -34,6 +38,18 @@ export default function PartnerDashboard() {
   const [createOpen, setCreateOpen] = useState(false);
   const [selected, setSelected] = useState<ClientStat | null>(null);
   const [selectedTab, setSelectedTab] = useState<DetailTab>("summary");
+  const [selectedRange, setSelectedRange] = useState<DateRange | null>(null);
+  const [day, setDay] = useState(todayBR);
+
+  // Resumo de hoje para o card do Dashboard (mesmo cache da aba Demandas do Dia).
+  const todayData = useDayDemands(todayBR(), !!user && nav === "dashboard");
+  const todaySummary = todayData.demands
+    ? {
+        total: todayData.demands.length,
+        done: todayData.demands.filter((d) => dayGroup(d.status) === "done").length,
+        late: todayData.demands.filter((d) => isLate(d)).length,
+      }
+    : null;
 
   const partnerName = branding?.display_name || "Portal do Parceiro";
 
@@ -64,9 +80,18 @@ export default function PartnerDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, user, range.from?.getTime(), range.to?.getTime()]);
 
-  const openClient = (c: ClientStat, tab: DetailTab = "summary") => {
+  const openClient = (c: ClientStat, tab: DetailTab = "summary", rangeOverride: DateRange | null = null) => {
     setSelectedTab(tab);
+    setSelectedRange(rangeOverride);
     setSelected(c);
+  };
+
+  // A partir das Demandas do Dia: abre o cliente já nos disparos daquele dia.
+  const openClientFromDay = (responsibleId: string, d: string) => {
+    const c = clients.find((x) => x.id === responsibleId);
+    if (!c) return toast.error("Cliente não encontrado. Atualize a página.");
+    const date = parseISO(d);
+    openClient(c, "dispatches", { from: date, to: date });
   };
 
   if (!authLoading && !user) return <Navigate to={`/${slug}/login`} replace />;
@@ -121,7 +146,11 @@ export default function PartnerDashboard() {
             onOpenClient={(c) => openClient(c)}
             onCreate={() => setCreateOpen(true)}
             onGoToClients={() => setNav("clients")}
+            today={todaySummary}
+            onGoToToday={() => { setDay(todayBR()); setNav("day"); }}
           />
+        ) : nav === "day" ? (
+          <DayDemands day={day} onDayChange={setDay} onOpenClient={openClientFromDay} />
         ) : (
           <ClientsList
             clients={clients}
@@ -135,7 +164,7 @@ export default function PartnerDashboard() {
       </main>
 
       {/* Navegação inferior no celular */}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 z-20 bg-card/95 backdrop-blur border-t grid grid-cols-3 pb-[env(safe-area-inset-bottom)]">
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-20 bg-card/95 backdrop-blur border-t grid grid-cols-4 pb-[env(safe-area-inset-bottom)]">
         {NAV.map((n) => {
           const Icon = n.icon;
           return (
@@ -144,7 +173,7 @@ export default function PartnerDashboard() {
               onClick={() => setNav(n.key)}
               className={cn("flex flex-col items-center gap-0.5 py-2.5 text-[11px] font-medium", nav === n.key ? "text-primary" : "text-muted-foreground")}
             >
-              <Icon className="h-5 w-5" /> {n.label}
+              <Icon className="h-5 w-5" /> {n.short}
             </button>
           );
         })}
@@ -165,7 +194,7 @@ export default function PartnerDashboard() {
       <ClientDetailSheet
         client={selected}
         initialTab={selectedTab}
-        initialRange={range}
+        initialRange={selectedRange ?? range}
         slug={slug}
         partnerName={partnerName}
         onClose={() => setSelected(null)}
