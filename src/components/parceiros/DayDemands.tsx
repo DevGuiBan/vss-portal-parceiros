@@ -93,6 +93,7 @@ export function DayDemands({ day, onDayChange, onOpenClient }: Props) {
   const dateLabel = format(dateObj, "EEEE, d 'de' MMMM", { locale: ptBR });
   const toggle = (f: Filter) => setFilter((cur) => (cur === f ? "all" : f));
   const firstLoad = demands === null && loading;
+  const failed = !!error && !demands;
 
   return (
     <div className="space-y-5">
@@ -143,7 +144,7 @@ export function DayDemands({ day, onDayChange, onOpenClient }: Props) {
       </div>
 
       {/* Contadores = filtros */}
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+      {!failed && <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
         {firstLoad
           ? Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-[68px] rounded-xl" />)
           : ([{ key: "all", label: "Total" }, ...DAY_GROUPS] as { key: Filter; label: string }[]).map((g) => (
@@ -161,7 +162,7 @@ export function DayDemands({ day, onDayChange, onOpenClient }: Props) {
                 <div className="text-[11px] sm:text-xs text-muted-foreground truncate">{g.label}</div>
               </button>
             ))}
-      </div>
+      </div>}
 
       {/* Destaques: só aparecem quando existem */}
       {(counts.late > 0 || counts.awaiting > 0) && (
@@ -195,7 +196,7 @@ export function DayDemands({ day, onDayChange, onOpenClient }: Props) {
         </div>
       )}
 
-      <div className="flex flex-col sm:flex-row gap-2 sm:items-center justify-between">
+      {!failed && <div className="flex flex-col sm:flex-row gap-2 sm:items-center justify-between">
         <div className="relative sm:max-w-xs w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar cliente ou ação" className="pl-9 pr-8" />
@@ -215,9 +216,9 @@ export function DayDemands({ day, onDayChange, onOpenClient }: Props) {
           onChange={setGroupBy}
           className="sm:w-auto"
         />
-      </div>
+      </div>}
 
-      {error && !demands ? (
+      {failed ? (
         <Card>
           <EmptyState
             icon={AlertTriangle}
