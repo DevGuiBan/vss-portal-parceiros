@@ -288,7 +288,7 @@ export function ClientDetailSheet({ client, initialTab, initialRange, slug, part
         t ? t.delivered : "",
         t ? t.failures : "",
         rate !== null ? rate.toFixed(1).replace(".", ",") : "",
-        t ? (t.sent * unitPrice).toFixed(2).replace(".", ",") : "",
+        t ? (t.delivered * unitPrice).toFixed(2).replace(".", ",") : "",
       ];
     });
     const safeName = client.name.replace(/[^\p{L}\p{N}]+/gu, "-").toLowerCase();
@@ -362,8 +362,8 @@ export function ClientDetailSheet({ client, initialTab, initialRange, slug, part
                         <StatCard
                           icon={CircleDollarSign}
                           label="Valor estimado"
-                          value={fmtBRL(summary.sent * unitPrice)}
-                          hint={unitPrice ? undefined : <span className="text-amber-600">Defina o custo unitário abaixo</span>}
+                          value={fmtBRL(summary.delivered * unitPrice)}
+                          hint={unitPrice ? "Entregues × custo unitário" : <span className="text-amber-600">Defina o custo unitário abaixo</span>}
                         />
                       </div>
                     )}
@@ -492,7 +492,7 @@ export function ClientDetailSheet({ client, initialTab, initialRange, slug, part
                                   </span>
                                   <RateBadge sent={totals.sent} delivered={totals.delivered} />
                                   {unitPrice > 0 && (
-                                    <span className="hidden sm:inline text-xs tabular-nums font-medium w-20 text-right">{fmtBRL(totals.sent * unitPrice)}</span>
+                                    <span className="hidden sm:inline text-xs tabular-nums font-medium w-20 text-right">{fmtBRL(totals.delivered * unitPrice)}</span>
                                   )}
                                 </div>
                               )}

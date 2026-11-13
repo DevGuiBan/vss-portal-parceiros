@@ -26,7 +26,7 @@ export interface ManualReportRow {
   failures: number;
 }
 
-/** Faturamento estimado = mensagens enviadas × custo unitário. */
-export function estimatedRevenue(c: Pick<ClientStat, "sent" | "unit_price">) {
-  return (Number(c.sent) || 0) * (Number(c.unit_price) || 0);
+/** Faturamento estimado = mensagens ENTREGUES × custo unitário (cobrança só pelas entregues). */
+export function estimatedRevenue(c: Pick<ClientStat, "delivered" | "unit_price">) {
+  return (Number(c.delivered) || 0) * (Number(c.unit_price) || 0);
 }
